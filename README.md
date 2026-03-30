@@ -1,32 +1,65 @@
-# Conway's Game of Life — 32×8 LED Matrix
+# Conway's Game of Life on ESP32
 
-A hardware implementation of Conway's Game of Life on a 4-in-1 MAX7219 LED matrix, powered by an ESP32. Features a potentiometer for real-time density and speed control, a passive buzzer for birth/death audio feedback, automatic stagnation detection, and a live web dashboard served over WiFi for statistical analysis of emergent complexity.
+An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed density and simulation speed, and exposes a tiny local HTTP API. A React + Vite dashboard polls that API for live metrics, charts, and per-session analysis.
 
----
+## What The Project Does
 
-## What It Does
+- Runs Conway's Game of Life on a 32×8 toroidal grid.
+- Uses the potentiometer to control both seed density and generation delay.
+- Plays short buzzer tones when births or deaths dominate a generation.
+- Detects stagnation and rolls into the next session automatically.
+- Lets the dashboard control three states:
+  - `IDLE` -> `Start`
+  - `RUNNING` -> `Pause`
+  - `PAUSED` -> `Resume` or `Restart`
+- Prompts for a batch size of `5` to `30` sessions when you press `Start`.
+- Stores up to `30` completed session summaries for scatter plots and the session table.
 
-The simulation runs Conway's Game of Life across a 32×8 grid of LEDs. Each LED is a cell — alive (lit) or dead (off). Every generation, the four rules of Life are applied simultaneously to all 256 cells, producing emergent patterns from simple logic.
+`Start` begins a fresh batch and seeds a new grid. `Resume` continues the exact paused grid without reseeding. `Restart` reseeds the current session immediately.
 
-A potentiometer controls both seed density and generation speed. When the simulation stabilises or dies out, it automatically reseeds. After every 5 sessions the simulation pauses — you review the dashboard, adjust the pot to a new density, then manually restart. Up to 30 sessions accumulate before a full clear.
+## Repo Layout
 
-A passive buzzer ticks at different pitches depending on whether births or deaths dominate each generation. A WiFi access point serves a live dashboard on your phone or laptop — no router needed.
-
----
+```text
+.
+├── platformio.ini
+├── README.md
+├── skills/
+│   └── skills.md
+├── src/
+│   ├── main.cpp
+│   ├── web.cpp
+│   ├── web.h
+│   └── credentials.h        # local only, gitignored
+└── frontend/
+    ├── .env.example
+    ├── index.html
+    ├── package.json
+    ├── vite.config.js
+    └── src/
+        ├── main.jsx
+        ├── App.jsx
+        ├── App.module.css
+        ├── config.js
+        ├── index.css
+        ├── tokens.css
+        ├── hooks/
+        ├── lib/
+        └── components/
+```
 
 ## Hardware
 
 | Component | Purpose |
 |---|---|
-| ESP32 dev board | Microcontroller |
-| 4-in-1 MAX7219 LED matrix (FC-16) | 32×8 display |
-| 10kΩ potentiometer | Density and speed control |
+| ESP32 dev board | Main controller |
+| 4-in-1 MAX7219 FC-16 matrix | 32×8 LED display |
+| 10k potentiometer | Density + speed input |
 | Passive buzzer | Birth/death audio feedback |
-| Breadboard + jumper wires | Connections |
+| Breadboard + jumper wires | Wiring |
 
 ### Wiring
 
-**MAX7219 → ESP32**
+**MAX7219 -> ESP32**
 
 | Matrix pin | ESP32 pin |
 |---|---|
@@ -36,268 +69,295 @@ A passive buzzer ticks at different pitches depending on whether births or death
 | CLK | GPIO 18 |
 | CS | GPIO 5 |
 
-**Potentiometer → ESP32**
+**Potentiometer -> ESP32**
 
 | Pot pin | ESP32 pin |
 |---|---|
-| Pin 1 (left leg) | 3.3V |
-| Pin 2 (wiper / middle) | GPIO 34 |
-| Pin 3 (right leg) | GND |
+| Left leg | 3.3V |
+| Middle / wiper | GPIO 34 |
+| Right leg | GND |
 
-**Passive buzzer → ESP32**
+**Buzzer -> ESP32**
 
 | Buzzer pin | ESP32 pin |
 |---|---|
-| + (positive) | GPIO 19 |
-| - (negative) | GND |
+| + | GPIO 19 |
+| - | GND |
 
-> **Important:** Wire the potentiometer between 3.3V and GND only. The ESP32 ADC is not 5V tolerant — connecting to 5V will damage the pin permanently.
+Use `3.3V`, not `5V`, for the potentiometer. GPIO 34 is not 5V tolerant.
 
----
+## Firmware Setup
 
-## Building with PlatformIO
+### 1. Create `src/credentials.h`
 
-### Project Structure
+This file is intentionally local and should not be committed.
 
-```
-game_of_life/
-├── platformio.ini
-└── src/
-    ├── main.cpp          — hardware: Game of Life, MAX7219, buzzer, pot
-    ├── web.cpp           — web server: WiFi AP, endpoints, dashboard HTML
-    ├── web.h             — shared interface between main.cpp and web.cpp
-    └── credentials.h     — WiFi AP name and password (gitignored this file)
+```cpp
+#pragma once
+
+#define WIFI_SSID "your_wifi_name"
+#define WIFI_PASSWORD "your_wifi_password"
 ```
 
-### platformio.ini
+Do not put `WiFi.begin(...)` or `WiFi.config(...)` in `credentials.h`. It should only contain the credential macros.
+
+### 2. PlatformIO
+
+The repo already contains a working `platformio.ini`:
 
 ```ini
 [env:esp32dev]
 platform = espressif32
 board = esp32dev
 framework = arduino
+monitor_port = /dev/cu.usbserial-310
+upload_port = /dev/cu.usbserial-310
+monitor_speed = 115200
 lib_deps =
     majicdesigns/MD_MAX72XX @ ^3.3.1
 ```
 
-### credentials.h
+If your serial device is different, update `monitor_port` and `upload_port`.
 
-```cpp
-#pragma once
-#define AP_SSID     "your_network_name"
-#define AP_PASSWORD "set_your_own"
+### 3. Build / Upload
+
+```bash
+pio run
+pio run --target upload
+pio device monitor -b 115200
 ```
 
-Make and add `src/credentials.h` to your `.gitignore` before committing.
+On boot, the board connects in station mode and prints its IP:
 
-### Steps
-
-1. Install [VS Code](https://code.visualstudio.com/) and the [PlatformIO extension](https://platformio.org/install/ide?install=vscode)
-2. Create a new project: **PlatformIO Home → New Project**, select `Espressif ESP32 Dev Module`, framework `Arduino`
-3. Replace `platformio.ini` with the config above
-4. Create all four source files in `src/`
-5. Build and upload: `Ctrl+Alt+U`
-
-PlatformIO will automatically download the MD_MAX72XX library on first build.
-
-### Connecting to the Dashboard
-
-1. Power on the ESP32
-2. On your phone or laptop, connect to the WiFi network `your_network_name`
-3. Open a browser and navigate to `http://192.168.4.1`
-4. The dashboard loads — tap **Restart** to begin the first session
-
-The ESP32 runs its own access point. No router or internet connection is needed. Your phone will show a "no internet" warning — this is normal, the dashboard is served locally.
-
----
-
-## How It Works
-
-### The Four Rules
-
-Every generation, all 256 cells are evaluated simultaneously against their 8 neighbours:
-
-| Condition | Result |
-|---|---|
-| Live cell with fewer than 2 live neighbours | Dies (underpopulation) |
-| Live cell with 2 or 3 live neighbours | Survives |
-| Live cell with more than 3 live neighbours | Dies (overpopulation) |
-| Dead cell with exactly 3 live neighbours | Born |
-
-No cell is updated until all cells have been evaluated — a technique called double buffering. This guarantees every cell sees the state from the previous generation, not a mix of old and new.
-
-### Grid Representation
-
-The 32×8 grid is stored as eight `uint32_t` integers — one per row, with each of the 32 bits representing one cell. This allows bitwise operations to efficiently check, set, and clear individual cells:
-
-```cpp
-bool alive = (grid[r] >> c) & 1;       // check cell
-grid[r] |=  (1UL << c);                // birth a cell
-grid[r] &= ~(1UL << c);               // kill a cell
+```text
+ESP32 IP: 192.168.50.100
 ```
 
-Death requires no explicit operation — `next[]` is zeroed at the start of every generation. A cell only exists in `next[]` if it earns survival or birth. Omission equals death by default.
+The current firmware is configured for a static IP in `src/web.cpp`. If your router uses a different subnet or that address is unavailable, update the `IPAddress` values there.
 
-### Toroidal Wrapping
+## Frontend Setup
 
-The grid wraps at all four edges — left connects to right, top connects to bottom — forming a torus. This prevents boundary cells from having fewer than 8 neighbours and avoids premature die-off at the edges:
+### Install
 
-```cpp
-int above = (r - 1 + ROWS) % ROWS;
-int below = (r + 1) % ROWS;
-int lc_   = (c - 1 + COLS) % COLS;
-int rc_   = (c + 1) % COLS;
+```bash
+cd frontend
+npm install
 ```
 
-### Double Buffering
+### Environment
 
-Results are written to a separate `next[]` array while `grid[]` stays frozen. Once all cells are evaluated, `next[]` is copied into `grid[]`. Without this, cells processed early in the loop would influence cells processed later in the same generation, corrupting the simulation.
+Copy `frontend/.env.example` to `frontend/.env` and set your board IP:
 
-### Stagnation Detection
-
-The simulation hashes the grid state each generation and compares it against the six most recent hashes stored in a circular buffer. A match means the simulation has entered a stable or oscillating state and triggers an automatic reseed. Six hashes back catches oscillators up to period 6, covering the vast majority of patterns seen on a 32×8 grid.
-
-### Potentiometer
-
-`analogRead()` on GPIO 34 returns a 12-bit value (0–4095) mapped simultaneously to two parameters. Seed density maps to 15–55%. Generation delay maps to 50–300ms. Turning the pot toward one end produces sparse slow evolution; toward the other produces dense fast collapse.
-
-At low density, cells are sparse and small stable clusters form easily — sessions run long. At high density, most cells have too many neighbours and die from overpopulation — sessions are short. The interesting zone sits around 30–40%, where interacting patterns have enough room to evolve without suffocating.
-
-### Buzzer
-
-Each generation, births and deaths are counted using `__builtin_popcount()` on bitwise comparisons of `grid[]` and `next[]`:
-
-```cpp
-totalBorn = __builtin_popcount(next[r] & ~grid[r]);  // dead → alive
-totalDied = __builtin_popcount(grid[r] & ~next[r]);  // alive → dead
+```env
+VITE_API_URL=http://192.168.50.100
 ```
 
-If births dominate, a high-pitched tone (1800Hz) plays for 40ms. If deaths dominate, a low-pitched tone (250Hz) plays. Equal generations are silent. At high density the buzzer produces rapid low crackling as overpopulation collapses the grid. At mid density it alternates irregularly — the audio signature of the edge of chaos.
+### Development
 
----
+```bash
+cd frontend
+npm run dev
+```
 
-## Session System
+The Vite dev server proxies the dashboard API routes to the ESP32 IP configured in `frontend/vite.config.js`.
 
-Sessions are blocks of 5 simulation runs. After each run ends (stagnation detected), the session is finalised and its statistics stored. After 5 runs the simulation pauses and the dashboard shows a comparison. Tap **Restart** on the dashboard to begin the next block of 5.
+### Production Build
 
-Up to 30 sessions accumulate in RAM. Boot clears all history. The dashboard's **Clear History** button resets everything at runtime and returns to a paused state, letting you set the pot to a desired starting density before restarting.
+```bash
+cd frontend
+npm run build
+```
 
-Each session stores:
+## Dashboard Behavior
 
-| Field | Description |
-|---|---|
-| Density | Potentiometer (density) reading at seed time, 15–55% |
-| Peak population | Maximum live cells this session |
-| Avg entropy | Mean Shannon entropy × 100 |
-| Avg P(birth) | Mean birth probability × 100 |
-| Avg P(death) | Mean death probability × 100 |
-| Generations | How many generations this session lasted |
-| End reason | 0 = stagnant, 1 = died out |
+The dashboard polls `/data` every `150ms`. Action buttons also trigger an immediate follow-up snapshot so state swaps feel instant instead of waiting on the next passive poll.
 
----
+### State Machine
 
-## Web Dashboard
+| State | Header buttons | Behavior |
+|---|---|---|
+| `IDLE` | `Start`, `Clear` | Prompts for a batch size from 5 to 30, then seeds a fresh run |
+| `RUNNING` | `Pause`, `Clear` | Advances generations continuously |
+| `PAUSED` | `Resume`, `Restart`, `Clear` | `Resume` keeps the same grid, `Restart` reseeds |
 
-The dashboard is served directly from the ESP32 at `192.168.4.1`. The browser polls `/data` every 150ms. No internet connection or external server is required.
+### Sessions
 
-### Charts
+- `Start` asks how many sessions to run: `5` to `30`.
+- The header shows `session / batchTarget`.
+- A session ends when the grid stagnates.
+- Finished sessions are pushed into the table and scatter plots immediately.
+- `Clear` wipes session history and returns the firmware to `IDLE`.
 
-**Population over time** — rolling 100-generation line chart showing live cell count (0–256). Flatlines when stable, drops sharply on collapse.
-
-**Birth / death probability** — P(birth) and P(death) as rolling probability lines with 95% confidence interval bands computed using the t-distribution. Two window modes available via toggle:
-
-- **Rolling 20** — last 20 generations only, resets each session. Shows per-session behaviour. With only 20 samples the t-distribution uses fat tails (t-critical ≈ 2.093) reflecting genuine uncertainty.
-- **Persistent** — accumulates across all sessions up to 200 points. As the window fills, the t-distribution converges toward the normal distribution and the CI band visibly narrows — the convergence itself is observable on the chart.
-
-**Entropy over time** — rolling 100-generation line chart of Shannon entropy (0–1). Peaks during active phases, drops to 0 on still lifes.
-
-**Density function** — scatter plot of average P(birth) and P(death) per session against seed density, built up across all sessions. Over 30 sessions this traces the phase diagram of Life — showing the transition between ordered and chaotic behaviour.
-
-**Autocorrelation vs density** — scatter plot of lag-1 autocorrelation of P(birth) against seed density, computed at session end from the persistent window. Values near 0 indicate randomness; values near 0.5 indicate deterministic chaos — structured memory without full predictability.
-
-**Session history table** — all recorded sessions with per-session statistics.
+## API
 
 ### Endpoints
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/` | GET | Serves dashboard HTML |
-| `/data` | GET | Current generation JSON snapshot |
-| `/history` | GET | All session summaries as JSON |
-| `/restart` | POST | Resume from paused state |
-| `/clear` | POST | Wipe all history and pause |
+| `/data` | `GET` | Current live snapshot |
+| `/history` | `GET` | Completed session summaries |
+| `/run?count=N` | `POST` | Start a fresh batch of `5` to `30` sessions |
+| `/restart` | `POST` | Reseed the current session immediately |
+| `/pause` | `POST` | Pause mid-session |
+| `/resume` | `POST` | Resume the paused session |
+| `/clear` | `POST` | Clear history and return to idle |
 
----
+### `/data` shape
 
-## Emergent Complexity - inspiration behind this project 
+```json
+{
+  "pop": 84,
+  "born": 12,
+  "died": 9,
+  "entropy": 0.73,
+  "pBirth": 0.045,
+  "pDeath": 0.127,
+  "density": 38,
+  "session": 3,
+  "batchTarget": 10,
+  "totalSessions": 12,
+  "state": "RUNNING"
+}
+```
 
-Conway's Game of Life is one of the most studied examples of emergence — complex structured behaviour arising from simple local rules. No pattern is explicitly programmed. Still lifes, oscillators, and gliders are not special cases in the code — they are simply the configurations that happen to satisfy the four rules indefinitely or cyclically.
+### `/history` shape
 
-Life is classified as a **Class IV cellular automaton** by Stephen Wolfram — the only class that produces a mix of stable structures, oscillators, and unpredictable long-range behaviour simultaneously. Most rule sets fall into Class I (dies immediately) or Class II (stable patterns only). Life's rules sit in the narrow band that produces genuine complexity.
+```json
+{
+  "sessions": [
+    {
+      "density": 38,
+      "peakPop": 97,
+      "avgEntropy": 71,
+      "avgPBirth": 12,
+      "avgPDeath": 34,
+      "autocorr": 45,
+      "generations": 84,
+      "endReason": 0
+    }
+  ]
+}
+```
 
-Life is also **Turing complete** — patterns such as glider guns and logic gates have been constructed entirely within the ruleset, capable of performing arbitrary computation. The 32×8 grid here is far too small to demonstrate this, but the underlying engine is the same.
+## Frontend Architecture
+
+- `frontend/src/hooks/useSimData.js`
+  - owns all polling, action POSTs, chart history, and session history
+- `frontend/src/components/Header/`
+  - live metrics, state badge, and action buttons
+- `frontend/src/components/ChartGrid/`
+  - population, entropy, and probability charts
+- `frontend/src/components/AnalysisPanel/`
+  - collapsible density scatter, autocorrelation scatter, and session table
+- `frontend/src/tokens.css`
+  - global design tokens
+- `frontend/src/index.css`
+  - minimal global reset
+
+Only `tokens.css` and `index.css` are global. Everything else is component-scoped CSS Modules.
+
+## Simulation Notes
+
+- Grid storage uses eight `uint32_t` rows for compact bitwise operations.
+- The board uses double buffering with `grid[]` and `next[]`.
+- Edge wrapping is toroidal.
+- Stagnation detection compares the current hash against the last `6` hashes.
+- Entropy uses binary Shannon entropy across all `256` cells.
+- The potentiometer maps to:
+  - density: `15%` to `55%`
+  - generation delay: `50ms` to `300ms`
+
+## Inspiration
+
+Conway's Game of Life is compelling because the code stays simple while the behavior does not. There is no special-case logic for gliders, oscillators, or still lifes anywhere in the firmware. Those patterns emerge on their own from the repeated application of a tiny deterministic ruleset.
+
+On this 32×8 matrix, the project becomes a physical version of that idea. You are not just watching a simulation in a browser tab. You are turning a knob, changing initial conditions, hearing births and deaths through the buzzer, and watching order, collapse, and chaotic transitions appear in real time on hardware.
+
+### The Logic Engine
+
+At the center of the project is a compact logic engine:
+
+- each cell checks its 8 neighbours
+- the current generation stays frozen in `grid[]`
+- the next generation is written into `next[]`
+- once every cell is evaluated, `next[]` replaces `grid[]`
+
+That double-buffered update model is what keeps the simulation honest. Every cell sees the same previous state, so the result comes from the rules themselves rather than from loop order or partial updates.
+
+Because the grid wraps on all sides, the engine behaves like a torus rather than a bounded rectangle. That keeps edge cells from behaving like a special case and makes the system feel more like a continuous world than a box with dead borders.
+
+### The Four Rules
+
+Every generation follows the same four rules:
+
+| Condition | Result |
+|---|---|
+| Live cell with fewer than 2 live neighbours | Dies from underpopulation |
+| Live cell with 2 or 3 live neighbours | Survives |
+| Live cell with more than 3 live neighbours | Dies from overpopulation |
+| Dead cell with exactly 3 live neighbours | Becomes alive |
+
+Those four rules are the whole game. The interesting part is that they are enough. Repeating them across 256 cells is what produces stability, oscillation, collapse, and the edge-of-chaos behavior the dashboard is designed to measure.
+
+### Why This Game Matters
+
+Game of Life is one of the clearest examples of emergence in computing. Complex structures appear even though the engine itself only knows how to count neighbours and apply the same local rules everywhere. Nothing in the code explicitly says "make a glider" or "create an oscillator." Those behaviors are discovered by the system rather than authored line by line.
+
+That is part of why Life is so widely studied. It sits in the narrow middle ground between systems that collapse immediately and systems that freeze into trivial order. In Wolfram's terms, it is often discussed as a Class IV cellular automaton: structured enough to form persistent patterns, but unpredictable enough to keep generating new interactions.
+
+Life is also famous for being Turing complete. On large enough grids, people have built logic gates, memory, and computation out of nothing but moving patterns. This project is much smaller and more tactile, but it runs on that same underlying ruleset.
 
 ### Common Patterns
 
-**Still lifes** — perfectly stable configurations. Every live cell has exactly 2–3 neighbours and no dead neighbour has exactly 3. They never change. The block (2×2 square) is the simplest example.
+Even on a 32×8 display, a few recurring structures show up often:
 
-**Oscillators** — patterns that cycle between two or more states repeatedly. The blinker (three cells in a line) is the most common on this grid, alternating between horizontal and vertical every generation.
+- still lifes
+  - stable shapes that never change once formed
+- oscillators
+  - patterns that flip between two or more repeating states
+- glider-like movement
+  - rare on this grid size, but the same traveling-pattern logic can still appear
 
-**Gliders** — five-cell patterns that translate diagonally across the grid over four generations. Rare on a 32×8 grid but possible. The simplest example of a pattern that carries information across space.
+The dashboard exists partly to help make those qualitative behaviors measurable. A still life pushes entropy and birth/death pressure down. An active oscillator keeps local structure alive. A chaotic interaction zone widens the probability bands and keeps the population trace moving.
 
-### Statistical Signatures of Chaos
+### Why The Dashboard Is Interesting
 
-The dashboard measures four statistical signatures that together constitute evidence of deterministic chaos at the phase transition density (~30–40%):
+The hardware gives you the visual and audio experience of the simulation, but the dashboard makes the invisible structure legible:
 
-**Entropy peak** — Shannon entropy reaches its maximum at mid density. The interesting zone sits just below the peak where complexity is maximised.
+- entropy shows how ordered or mixed the grid is
+- `P(birth)` and `P(death)` show the pressure of change generation to generation
+- density links initial conditions to session outcomes
+- autocorrelation hints at how much one generation predicts the next
 
-**CI band width** — the width of the 95% confidence interval around P(birth) and P(death) reflects variance in birth/death pressure. Wide bands indicate high unpredictability. Narrow bands at density extremes indicate deterministic behaviour.
+That is the real motivation behind the project. It is not only an LED-matrix demo. It is a small physical lab for exploring how simple deterministic rules can produce order, collapse, oscillation, and a narrow edge-of-chaos regime that feels surprisingly alive.
 
-**Bimodal distribution** — at mid density, P(birth) tends toward a bimodal distribution with peaks corresponding to quiet and active generations. This is the statistical fingerprint of emergent structure. Random systems do not produce bimodality.
+## Performance Notes
 
-**Autocorrelation** — lag-1 autocorrelation measures how much the current generation predicts the next. Values of 0.3–0.6 at mid density indicate deterministic chaos. The autocorrelation scatter over 30 sessions should trace an inverted U shape peaking at the edge of chaos density.
+- Frontend charts disable animation globally in `frontend/src/main.jsx`.
+- Polling is sequential, not overlapping, so slow requests do not pile up.
+- Action buttons do a one-off sync instead of waiting for the background loop.
+- Firmware sends compact JSON snapshots and keeps history capped at `30` sessions.
+- The probability chart uses rolling and persistent windows instead of unbounded arrays.
 
-### Shannon Entropy
+## Verification
 
-The entropy metric uses the binary Shannon entropy formula:
+Checked locally:
 
-```
-H = -(p × log₂(p) + q × log₂(q))
-```
+- `npm run build` in `frontend/` passes cleanly.
+- The dashboard code path now reflects the current `IDLE / RUNNING / PAUSED` flow.
+- The README, `.env.example`, and API docs now match the current codebase.
 
-where p is the probability a cell is alive (live cells / 256) and q = 1 − p. Base 2 is used because the system is binary — one cell carries exactly 1 bit of information at maximum uncertainty. Returns 0 when the grid is uniform and 1.0 when exactly half the cells are alive.
+Manual smoke test after flashing:
 
-For an n-state generalisation (e.g. 3-state or 8-state Life), the formula extends to:
+- press `Start`, choose `5`, and confirm the header shows `1 / 5`
+- let one session finish and confirm the header advances to `2 / 5`
+- press `Pause`, then `Resume`, and confirm the same grid continues
+- press `Restart` and confirm the grid reseeds immediately
+- press `Clear` and confirm the header returns to `0 / 0`
 
-```
-H = -∑ pᵢ × log₂(pᵢ)
-```
+Not verified in this environment:
 
-with maximum entropy of log₂(n), normalised to 0–1 by dividing by log₂(n).
+- `pio run` / `pio run --target upload`
+- live ESP32 hardware behavior after flashing
 
----
-
-## Tuning
-
-| Parameter | Location | Effect |
-|---|---|---|
-| Density range | `map()` in `seedGrid()` | Change `15, 55` to widen or narrow pot range |
-| `HASH_HISTORY` | `#define` | Higher catches longer oscillators before reseeding |
-| `INTENSITY` | `setup()` | LED brightness 0–15 |
-| Birth tone | `playTone(1800, 40)` | Frequency and duration of birth tick |
-| Death tone | `playTone(250, 40)` | Frequency and duration of death tick |
-| Sessions per block | `>= 5` in `loop()` | Runs before pause checkpoint |
-| Max sessions | `history[30]` and `>= 30` | Total sessions before hard cap |
-| Poll interval | `setInterval(poll, 150)` | Dashboard refresh rate in ms |
-| Rolling window | `ROLLING_SIZE = 20` | Probability CI window size |
-| Persistent window | `PERSISTENT_SIZE = 200` | Max persistent probability history |
-
----
-
-## Possible Extensions
-
-- **SPIFFS** — store the dashboard HTML as a separate file on ESP32 flash, allowing edits without reflashing firmware.
-- **WebSockets** — replace HTTP polling with a persistent push connection, eliminating polling lag entirely.
-- **MQTT** — switch to station mode and push data to a cloud broker. Dashboard accessible from anywhere, not just the local AP network.
-- **3-state or 8-state Life** — extend cells to multiple states using 2–3 bits per cell. Entropy formula generalises naturally across any number of states.
-- **Pong** — the render pipeline, timing structure, and MD_MAX72XX familiarity built here transfers directly to a Pong implementation on the same hardware.
+`pio` is not installed in this environment, so firmware compilation still needs to be run on your machine.

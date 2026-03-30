@@ -1,0 +1,56 @@
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--space-4);
+}
+
+.card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.card canvas {
+    max-height: 200px;
+}
+
+.cardTitle {
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.cardTitleRow {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.toggle {
+    display: flex;
+    gap: var(--space-1);
+}
+
+.toggleBtn {
+    font-size: var(--text-xs);
+    padding: 3px var(--space-2);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    transition: color var(--transition), border-color var(--transition);
+}
+
+.toggleBtn:hover {
+    color: var(--text-secondary);
+}
+
+.active {
+    color: var(--color-birth);
+    border-color: var(--color-birth);
+}

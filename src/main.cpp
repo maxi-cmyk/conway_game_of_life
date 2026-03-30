@@ -15,6 +15,7 @@
 #define BUZZER_CH 0
 
 enum SimState {
+    IDLE,
     RUNNING,
     PAUSED
 };
@@ -28,8 +29,9 @@ int hashIndex = 0;
 
 unsigned long lastGen = 0;
 unsigned long toneEnd = 0;
+unsigned long lastStatusPush = 0;
 
-SimState simState = PAUSED;
+SimState simState = IDLE;
 
 uint16_t genCount = 0;
 uint32_t entropyAcc = 0; 
@@ -40,7 +42,7 @@ uint32_t pDeathAcc = 0;
 uint32_t totalBorn = 0;
 uint32_t totalDied = 0;
 
-int sessionCount = 0;   // sessions in current 5-block
+int sessionCount = 0;   // completed sessions in the current batch
 int historyCount = 0;   // total sessions ever recorded
 
 // Rolling P(birth) history for lag-1 autocorrelation (computed at session end)
@@ -49,6 +51,8 @@ static int   pBirthHistLen = 0;
 
 // Per-session density accumulator (average over all generations)
 static uint32_t densityAcc = 0;
+
+static void resetSessionTracking();
 
 // Compute lag-1 autocorrelation of an array, returned scaled by 100 as int8_t
 static int8_t computeAutocorr(float* vals, int n) {
@@ -141,13 +145,7 @@ void finaliseSession(uint8_t reason) {
     //main.cpp own copy of historyCount
     historyCount++;
 
-    genCount       = 0;
-    entropyAcc     = 0;
-    peakPop        = 0;
-    pBirthAcc      = 0;
-    pDeathAcc      = 0;
-    pBirthHistLen  = 0;   // reset per-session history
-    densityAcc     = 0;
+    resetSessionTracking();   // reset per-session history
 }
 
 //rendering
@@ -162,6 +160,103 @@ void render() {
         mx.setRow(0, r, (row >> 24) & 0xFF);
     }
     mx.control(MD_MAX72XX::UPDATE, MD_MAX72XX::ON);
+}
+
+static uint8_t readDensityPercent() {
+    return (uint8_t)map(analogRead(POT_PIN), 0, 4095, 15, 55);
+}
+
+static const String STATE_IDLE = "IDLE";
+static const String STATE_RUNNING = "RUNNING";
+static const String STATE_PAUSED = "PAUSED";
+
+struct BatchProgress {
+    int session;
+    int target;
+};
+
+static const String& currentStateString() {
+    switch (simState) {
+        case RUNNING:
+            return STATE_RUNNING;
+        case PAUSED:
+            return STATE_PAUSED;
+        case IDLE:
+        default:
+            return STATE_IDLE;
+    }
+}
+
+static BatchProgress currentBatchProgress() {
+    int runRemaining = webRunRemaining();
+    int session = (simState == IDLE && genCount == 0)
+        ? sessionCount
+        : sessionCount + 1;
+    int target = 0;
+
+    if (runRemaining > 0) {
+        target = sessionCount + runRemaining;
+    } else if (simState == IDLE && genCount == 0) {
+        target = sessionCount;
+    } else {
+        target = max(sessionCount + 1, 1);
+    }
+
+    return { session, target };
+}
+
+static void publishState() {
+    BatchProgress progress = currentBatchProgress();
+    webUpdateState(
+        currentStateString(),
+        progress.session,
+        progress.target,
+        historyCount,
+        readDensityPercent()
+    );
+}
+
+static void resetSessionTracking() {
+    genCount      = 0;
+    entropyAcc    = 0;
+    peakPop       = 0;
+    pBirthAcc     = 0;
+    pDeathAcc     = 0;
+    pBirthHistLen = 0;
+    densityAcc    = 0;
+}
+
+static void publishSeedSnapshot() {
+    uint8_t pop = 0;
+    BatchProgress progress = currentBatchProgress();
+
+    for (int r = 0; r < ROWS; r++) {
+        pop += __builtin_popcount(grid[r]);
+    }
+
+    webUpdateData(
+        pop,
+        0,
+        0,
+        gridEntropy(),
+        0.0f,
+        0.0f,
+        readDensityPercent(),
+        progress.session,
+        progress.target,
+        historyCount,
+        currentStateString()
+    );
+}
+
+static void beginFreshSession() {
+    resetSessionTracking();
+    seedGrid();
+    render();
+    lastGen = millis();
+    ledcWriteTone(BUZZER_CH, 0);
+    toneEnd = 0;
+    publishSeedSnapshot();
 }
 
 //step generation 
@@ -244,7 +339,8 @@ void stepGeneration() {
     if (pop > peakPop) peakPop = pop;
 
     // Read density once, accumulate for average
-    uint8_t curDensity = (uint8_t)map(analogRead(POT_PIN), 0, 4095, 15, 55);
+    uint8_t curDensity = readDensityPercent();
+    BatchProgress progress = currentBatchProgress();
     densityAcc += curDensity;
 
     // Push snapshot to web
@@ -256,9 +352,10 @@ void stepGeneration() {
         p_birth,
         p_death,
         curDensity,
-        sessionCount + 1,
+        progress.session,
+        progress.target,
         historyCount,
-        simState == PAUSED
+        currentStateString()
     );
 }
 
@@ -274,31 +371,43 @@ void setup() {
     webSetup();                  // start WiFi AP + server
     seedGrid();
     mx.clear();
+    publishState();
 }
 
 void loop() {
     webHandle();  // always first — check for browser requests
 
+    if (millis() - lastStatusPush >= 120) {
+        publishState();
+        lastStatusPush = millis();
+    }
+
     // Handle start request (from Run button)
     if (webStartRequested()) {
         webStartAck();
-        sessionCount = 0;
-        simState     = RUNNING;
-        seedGrid();
+        if (simState == IDLE) {
+            sessionCount = 0;
+        }
+        simState = RUNNING;
+        beginFreshSession();
     }
 
-    // Handle stop request (pause mid-session without reseed)
-    if (webStopRequested()) {
-        webStopAck();
+    // Handle pause request (pause mid-session without reseed)
+    if (webPauseRequested()) {
+        webPauseAck();
         simState = PAUSED;
-        mx.clear();
-        webUpdateState(true, sessionCount + 1, historyCount);
+        ledcWriteTone(BUZZER_CH, 0);
+        toneEnd = 0;
+        publishState();
     }
 
     // Handle resume request (continue from paused state)
     if (webResumeRequested()) {
         webResumeAck();
         simState = RUNNING;
+        render();
+        lastGen = millis();
+        publishState();
     }
 
     // Handle clear request from browser
@@ -306,16 +415,10 @@ void loop() {
         webClearAck();
         historyCount  = 0;
         sessionCount  = 0;
-        genCount      = 0;
-        entropyAcc    = 0;
-        peakPop       = 0;
-        pBirthAcc     = 0;
-        pDeathAcc     = 0;
-        pBirthHistLen = 0;
-        densityAcc    = 0;
-        simState      = PAUSED;   // wait for manual restart
+        resetSessionTracking();
+        simState      = IDLE;     // wait for manual start
         mx.clear();               // blank the display
-        webUpdateState(true, 1, 0); // push cleared state immediately
+        publishState();
     }
 
     // Auto-stop tone
@@ -344,19 +447,19 @@ void loop() {
                 webDecrementRun();
                 if (webRunRemaining() > 0) {
                     delay(500);
-                    seedGrid();
+                    beginFreshSession();
                 } else {
-                    simState = PAUSED;   // batch complete
+                    simState = IDLE;     // batch complete, start fresh next time
                     mx.clear();
-                    webUpdateState(true, sessionCount + 1, historyCount);
+                    publishState();
                 }
             } else if (sessionCount >= 5 || historyCount >= 30) {
-                simState = PAUSED;
+                simState = IDLE;
                 mx.clear();
-                webUpdateState(true, sessionCount + 1, historyCount);
+                publishState();
             } else {
                 delay(500);
-                seedGrid();
+                beginFreshSession();
             }
         }
 

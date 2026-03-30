@@ -3,6 +3,7 @@
 
 #pragma once
 #include <stdint.h>
+#include <WString.h>
 
 struct SessionSummary {
     uint8_t density; //current density 
@@ -28,12 +29,13 @@ void webUpdateData(
     float p_death,
     uint8_t density, //[15, 55]%
     int session, 
+    int batchTarget,
     int totalSessions, 
-    bool paused
+    const String& state
 );
 
 // Updates just state and session counters (for pausing/clearing)
-void webUpdateState(bool paused, int session, int totalSessions);
+void webUpdateState(const String& state, int session, int batchTarget, int totalSessions, uint8_t density);
 
 //main.cpp calls this when session ends
 void webAddSession(SessionSummary s);
@@ -46,13 +48,12 @@ bool webClearRequested();
 void webStartAck();
 void webClearAck();
 
-// Stop/Resume (pause mid-session without reseed)
-bool webStopRequested();
-void webStopAck();
+// Pause/Resume (pause mid-session without reseed)
+bool webPauseRequested();
+void webPauseAck();
 bool webResumeRequested();
 void webResumeAck();
 
 // Run-N batch mode
 int  webRunRemaining();
 void webDecrementRun();
-

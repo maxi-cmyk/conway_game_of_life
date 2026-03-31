@@ -208,7 +208,7 @@ return { ...snap, /* existing */, exportCSV };
 }
 ```
 
-The exported filename includes the date so multiple runs don't overwrite each other, example: `game_of_life_2026-03-31.csv`.
+Include the date in the filename yourself so multiple runs do not overwrite each other. Use `runX_YYYY_MM_DD`, for example `run1_2026_04_01.csv`.
 
 ---
 
@@ -469,10 +469,10 @@ Total: ~90 sessions across 4 runs. Enough for meaningful models.
 
 **Name exports to match:**
 ```
-game_of_life_run1_low_2026-04-01.csv
-game_of_life_run2_mid_2026-04-01.csv
-game_of_life_run3_high_2026-04-02.csv
-game_of_life_run4_edge_2026-04-02.csv
+run1_2026_04_01.csv
+run2_2026_04_01.csv
+run3_2026_04_02.csv
+run4_2026_04_02.csv
 ```
 
 ---
@@ -488,8 +488,8 @@ game_of_life/
 │   ├── requirements.txt
 │   ├── game_of_life.ipynb
 │   └── data/
-│       ├── game_of_life_run1_low_2026-04-01.csv
-│       ├── game_of_life_run2_mid_2026-04-01.csv
+│       ├── run1_2026_04_01.csv
+│       ├── run2_2026_04_01.csv
 │       └── ...
 ```
 
@@ -645,4 +645,4 @@ joblib.dump(poly_model, 'models/lifespan_regressor.pkl')
 | 5.1 | Data collection | Hardware time | Phase 1–3 complete |
 | 6.x | Analysis notebook | 1–2 days | Phase 5 data |
 
-**Start here:** Phase 1.1 — non-blocking timer. Smallest change, immediate improvement, unblocks everything else.
+

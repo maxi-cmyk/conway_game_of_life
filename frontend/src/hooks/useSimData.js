@@ -372,10 +372,9 @@ export function useSimData() {
         }
 
         const safeLabel = sanitizeExportLabel(label);
-        const runId = new Date().toISOString().slice(0, 10);
-        const exportId = safeLabel ? `${safeLabel}_${runId}` : runId;
+        const exportId = safeLabel || 'session_history';
         const csv = buildSessionCsv(sessions, exportId);
-        downloadExport(`game_of_life_${exportId}.csv`, 'text/csv;charset=utf-8', csv);
+        downloadExport(`${exportId}.csv`, 'text/csv;charset=utf-8', csv);
     }, [downloadExport, sessions]);
 
     const exportJSON = useCallback((label = '') => {
@@ -384,10 +383,9 @@ export function useSimData() {
         }
 
         const safeLabel = sanitizeExportLabel(label);
-        const runId = new Date().toISOString().slice(0, 10);
-        const exportId = safeLabel ? `${safeLabel}_${runId}` : runId;
+        const exportId = safeLabel || 'session_history';
         const json = buildSessionJson(sessions);
-        downloadExport(`game_of_life_${exportId}.json`, 'application/json;charset=utf-8', json);
+        downloadExport(`${exportId}.json`, 'application/json;charset=utf-8', json);
     }, [downloadExport, sessions]);
 
     const updateSettings = useCallback(async (partial) => {

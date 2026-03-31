@@ -252,11 +252,11 @@ export function SettingsPanel({
                         <input
                             className={styles.input}
                             type="text"
-                            placeholder="run1_low"
+                            placeholder="run1_2026_04_01"
                             value={draft.exportLabel}
                             onChange={(event) => handleDraftChange('exportLabel', event.target.value)}
                         />
-                        <span className={styles.hint}>Name files like <code>run1_low</code> or <code>run4_edge</code>. Spaces and punctuation are cleaned automatically.</span>
+                        <span className={styles.hint}>Include the date: <code>runX_YYYY_MM_DD</code>, for example <code>run1_2026_04_01</code>. Spaces and punctuation are cleaned automatically.</span>
                     </label>
                     {shouldShowExportReminder ? (
                         <p className={styles.reminder}>{exportReminder}</p>

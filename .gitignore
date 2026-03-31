@@ -4,7 +4,7 @@
 .vscode/launch.json
 .vscode/ipch
 src/credentials.h
-.docs
+docs/.*
 
 # Frontend
 frontend/node_modules
@@ -12,3 +12,9 @@ frontend/dist
 frontend/.env
 frontend/.env.*
 !frontend/.env.example
+
+# Analysis exports and local notebook tooling
+analysis/data/*.csv
+analysis/data/*.json
+analysis/.venv/
+analysis/anaconda_projects/

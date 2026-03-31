@@ -1,6 +1,6 @@
-# Conway's Game of Life on ESP32
+# Conway's Game of Life remade using ESP32
 
-An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed density and simulation speed, and exposes a tiny local HTTP API. A React + Vite dashboard subscribes to a live SSE stream for metrics, charts, and per-session analysis.
+An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed density and simulation speed, and exposes a tiny local HTTP API. A React + Vite dashboard subscribes to a live SSE stream for metrics, charts, and per-session analysis. Afterwards, data analysis is done on a jupyter notebook. 
 
 ## What The Project Does
 
@@ -12,7 +12,7 @@ An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed densi
   - `IDLE` -> `Start`
   - `RUNNING` -> `Pause`
   - `PAUSED` -> `Resume` or `Restart`
-- Prompts for a batch size of `5` to `30` sessions when you press `Start`.
+- Prompts for a batch size of `3` to `30` sessions when you press `Start`.
 - Stores up to `30` completed session summaries for scatter plots and the session table.
 - Persists those completed session summaries across ESP32 reboots until you clear them.
 - Lets you tune matrix brightness, the per-session generation cap, and the stagnation window from the dashboard.
@@ -222,13 +222,13 @@ The dashboard opens one `/events` Server-Sent Events stream for live snapshots. 
 
 ### Sessions
 
-- `Start` asks how many sessions to run: `5` to `30`.
+- `Start` asks how many sessions to run: `3` to `30`.
 - The header shows `session / batchTarget`.
 - A session ends when the grid stagnates, dies out completely, or hits the configured generation cap.
 - Finished sessions are pushed into the table and scatter plots immediately.
 - `Clear History` wipes session history and returns the firmware to `IDLE`.
-- The header gear opens a dedicated settings section where you can change brightness, `maxGens`, and the stagnation window, then export the current session history as date-stamped CSV or JSON files.
-- The export section includes an optional `Export Label` field so Phase 5 runs can be named consistently, for example `run1_low` or `run4_edge`.
+- The header gear opens a dedicated settings section where you can change brightness, `maxGens`, and the stagnation window, then export the current session history as CSV or JSON files.
+- The export section asks for a filename in the format `runX_YYYY_MM_DD`, for example `run1_2026_04_01`.
 - Session history now survives ESP32 reboots until you clear it.
 
 ## API
@@ -240,7 +240,7 @@ The dashboard opens one `/events` Server-Sent Events stream for live snapshots. 
 | `/events` | `GET` | Server-Sent Events stream for live snapshots and settings updates |
 | `/data` | `GET` | Current live snapshot |
 | `/history` | `GET` | Completed session summaries |
-| `/run?count=N` | `POST` | Start a fresh batch of `5` to `30` sessions |
+| `/run?count=N` | `POST` | Start a fresh batch of `3` to `30` sessions |
 | `/restart` | `POST` | Reseed the current session immediately |
 | `/pause` | `POST` | Pause mid-session |
 | `/resume` | `POST` | Resume the paused session |
@@ -313,9 +313,7 @@ The dashboard opens one `/events` Server-Sent Events stream for live snapshots. 
 
 Only `tokens.css` and `index.css` are global. Everything else is component-scoped CSS Modules.
 
-## Phase 5 And 6 Prep
-
-The repo now includes an `analysis/` workspace so data collection and notebook work can start immediately:
+The repo includes an `analysis/` workspace so data collection and notebook work can start immediately after the hardware is set up:
 
 - [analysis/README.md](/Users/maxi/Desktop/conway_game_of_life/analysis/README.md) explains the export and analysis workflow
 - [analysis/requirements.txt](/Users/maxi/Desktop/conway_game_of_life/analysis/requirements.txt) contains the Python dependencies
@@ -402,68 +400,3 @@ The hardware gives you the visual and audio experience of the simulation, but th
 
 That is the real motivation behind the project. It is not only an LED-matrix demo. It is a small physical lab for exploring how simple deterministic rules can produce order, collapse, oscillation, and a narrow edge-of-chaos regime that feels surprisingly alive.
 
-## Performance Notes
-
-- Frontend charts disable animation globally in `frontend/src/main.jsx`.
-- Polling is sequential, not overlapping, so slow requests do not pile up.
-- Action buttons do a one-off sync instead of waiting for the background loop.
-- Firmware sends compact JSON snapshots and keeps history capped at `30` sessions.
-- The probability chart uses rolling and persistent windows instead of unbounded arrays.
-
-## Verification
-
-Checked locally:
-
-- `npm run build` in `frontend/` passes cleanly.
-- The dashboard code path now reflects the current `IDLE / RUNNING / PAUSED` flow.
-- The README, `.env.example`, and API docs now match the current codebase.
-
-Manual test guide after flashing:
-
-### Phase 1
-
-- press `Start`, choose `5`, and confirm the header shows `1 / 5`
-- let one session finish and confirm the header advances to `2 / 5`
-- during the short between-session transition, press `Clear History` and confirm the dashboard responds immediately instead of waiting for a blocking delay
-- press `Pause`, then `Resume`, and confirm the same grid continues
-- press `Restart` and confirm the grid reseeds immediately
-- export CSV or JSON and confirm the saved file contains the finished session records
-- confirm end reasons are represented in the session table:
-  - `stagnant` from a naturally repeating/stable run
-  - `max gens` by lowering `maxGens` and finishing a run at the cap
-  - `died` from a run that collapses completely dark
-
-### Phase 2
-
-- open the header gear and confirm the settings section appears as its own top-level area
-- change brightness and confirm the LED matrix updates immediately
-- change `maxGens`, start a fresh run, and confirm only the next freshly seeded session uses the new cap
-- change the stagnation window, start a fresh run, and confirm only the next freshly seeded session uses the new window
-- open `Session Analysis` and confirm:
-  - with no sessions, the charts show empty-state guidance instead of blank canvases
-  - with saved sessions, the four analysis charts and session table render correctly
-
-### Phase 3.1
-
-- finish a few sessions, then refresh the page and confirm the same session history still appears
-- power-cycle the ESP32, reopen the dashboard, and confirm the session history is still present
-- after reboot, confirm the dashboard returns in `IDLE` rather than resuming a partially completed batch
-- press `Clear History`, refresh the page, and confirm the history is empty
-- reboot once more after clearing and confirm the history stays empty
-- if you reach the `30`-session cap, export first, then clear before collecting more data
-
-### Phase 4.1
-
-- load the dashboard and confirm the live-link indicator moves from connecting to connected without needing a manual refresh
-- start a run and confirm the live metrics and charts only change when generations advance, not on a fixed timer
-- pause the session and turn the potentiometer; confirm density still updates while paused
-- finish a session and confirm the session table refreshes as soon as the total session count increases
-- keep the dashboard open, reboot the ESP32, and confirm the live-link indicator drops to reconnecting/offline and then recovers once the board is back
-- open a second dashboard tab and confirm both tabs receive live updates without breaking the first one
-
-Not verified in this environment:
-
-- `pio run` / `pio run --target upload`
-- live ESP32 hardware behavior after flashing
-
-`pio` is not installed in this environment, so firmware compilation still needs to be run on your machine.

@@ -16,17 +16,17 @@ analysis/
 ## Phase 5 workflow
 
 1. Run a focused batch on the dashboard.
-2. Export CSV with an `Export Label` such as `run1_low`, `run2_mid`, `run3_high`, or `run4_edge`.
+2. Export CSV with a filename in the format `runX_YYYY_MM_DD`.
 3. Move the downloaded CSV into `analysis/data/`.
 4. Clear stored history before starting the next collection block if you want a clean export.
 
 Recommended filename pattern:
 
 ```text
-game_of_life_run1_low_2026-04-01.csv
-game_of_life_run2_mid_2026-04-01.csv
-game_of_life_run3_high_2026-04-02.csv
-game_of_life_run4_edge_2026-04-02.csv
+run1_2026_04_01.csv
+run2_2026_04_01.csv
+run3_2026_04_02.csv
+run4_2026_04_02.csv
 ```
 
 ## Phase 6 workflow

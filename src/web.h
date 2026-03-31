@@ -39,9 +39,14 @@ void webUpdateState(const String& state, int session, int batchTarget, int total
 
 //main.cpp calls this when session ends
 void webAddSession(SessionSummary s);
+void webRestoreHistory(const SessionSummary* sessions, int count);
+void webCopyHistory(SessionSummary* out, int maxCount);
+int webHistoryCount();
 
-void webUpdateConfig(uint16_t maxGens);
+void webUpdateConfig(uint8_t brightness, uint16_t maxGens, uint8_t hashHistory);
+uint8_t webBrightness();
 uint16_t webMaxGens();
+uint8_t webHashHistory();
 
 //user requests, main.cpp polls to check if pressed
 bool webStartRequested();

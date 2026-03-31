@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <MD_MAX72xx.h>
+#include <Preferences.h>
 #include "web.h"
 
 #define HARDWARE_TYPE MD_MAX72XX::FC16_HW
@@ -9,7 +10,9 @@
 #define NUM_DEVICES 4
 #define ROWS 8
 #define COLS 32
-#define HASH_HISTORY 6
+#define DEFAULT_BRIGHTNESS 4
+#define DEFAULT_HASH_HISTORY 6
+#define MAX_HASH_HISTORY 12
 #define POT_PIN 34
 #define BUZZER_PIN 19
 #define BUZZER_CH 0
@@ -18,6 +21,8 @@
 #define END_MAX_GENS  2
 #define DEFAULT_MAX_GENS 400
 #define SESSION_TRANSITION_MS 500
+#define MAX_SESSION_HISTORY 30
+#define NVS_VERSION 2
 
 enum SimState {
     IDLE,
@@ -26,11 +31,13 @@ enum SimState {
 };
 
 MD_MAX72XX mx = MD_MAX72XX(HARDWARE_TYPE, DATA_PIN, CLK_PIN, CS_PIN, NUM_DEVICES);
+Preferences prefs;
 
 uint32_t grid[ROWS];
 uint32_t next[ROWS];
-uint32_t hashHistory[HASH_HISTORY];
+uint32_t hashHistory[MAX_HASH_HISTORY];
 int hashIndex = 0;
+int hashCount = 0;
 
 unsigned long lastGen = 0;
 unsigned long toneEnd = 0;
@@ -47,6 +54,9 @@ uint32_t pDeathAcc = 0;
 
 uint32_t totalBorn = 0;
 uint32_t totalDied = 0;
+uint8_t currentBrightness = DEFAULT_BRIGHTNESS;
+uint16_t activeMaxGens = DEFAULT_MAX_GENS;
+uint8_t activeHashHistory = DEFAULT_HASH_HISTORY;
 
 int sessionCount = 0;   // completed sessions in the current batch
 int historyCount = 0;   // total sessions ever recorded
@@ -60,6 +70,11 @@ static uint32_t densityAcc = 0;
 
 static void resetSessionTracking();
 static void handleSessionEnd(uint8_t reason);
+static void resetHashHistoryBuffer();
+static void loadPersistedHistory();
+static void savePersistedHistory();
+static void clearPersistedHistory();
+static void resetPersistedHistoryStore();
 
 // Compute lag-1 autocorrelation of an array, returned scaled by 100 as int8_t
 static int8_t computeAutocorr(float* vals, int n) {
@@ -110,13 +125,122 @@ uint32_t stateHash(){
 
 bool isStagnant(){
     uint32_t h = stateHash();
-    for (int i = 0; i < HASH_HISTORY; i++){
-        if (hashHistory[i] == h) return true;
+    bool repeated = false;
+
+    for (int i = 0; i < hashCount; i++){
+        if (hashHistory[i] == h) {
+            repeated = true;
+            break;
+        }
     }
-    hashHistory[hashIndex] = h; 
-    //HASH_HISTORY has a max value oof 6. wrap arnd after 
-    hashIndex = (hashIndex + 1) % HASH_HISTORY;
-    return false;
+
+    hashHistory[hashIndex] = h;
+    //HASH_HISTORY has a max value oof 6. wrap arnd after
+    hashIndex = (hashIndex + 1) % activeHashHistory;
+
+    if (hashCount < activeHashHistory) {
+        hashCount++;
+    }
+
+    return repeated;
+}
+
+static void resetHashHistoryBuffer() {
+    memset(hashHistory, 0xFF, sizeof(hashHistory));
+    hashIndex = 0;
+    hashCount = 0;
+}
+
+static void resetPersistedHistoryStore() {
+    prefs.clear();
+    prefs.putUChar("version", NVS_VERSION);
+    prefs.putInt("count", 0);
+}
+
+static void loadPersistedHistory() {
+    SessionSummary restored[MAX_SESSION_HISTORY];
+    memset(restored, 0, sizeof(restored));
+
+    prefs.begin("gol", false);
+
+    uint8_t storedVersion = prefs.getUChar("version", 0);
+    if (storedVersion != NVS_VERSION) {
+        resetPersistedHistoryStore();
+        prefs.end();
+        webRestoreHistory(nullptr, 0);
+        historyCount = 0;
+        return;
+    }
+
+    int storedCount = prefs.getInt("count", 0);
+    if (storedCount < 0 || storedCount > MAX_SESSION_HISTORY) {
+        resetPersistedHistoryStore();
+        prefs.end();
+        webRestoreHistory(nullptr, 0);
+        historyCount = 0;
+        return;
+    }
+
+    size_t expectedBytes = storedCount * sizeof(SessionSummary);
+    size_t storedBytes = prefs.getBytesLength("history");
+
+    if (storedCount == 0) {
+        prefs.end();
+        webRestoreHistory(nullptr, 0);
+        historyCount = 0;
+        return;
+    }
+
+    if (storedBytes != expectedBytes) {
+        resetPersistedHistoryStore();
+        prefs.end();
+        webRestoreHistory(nullptr, 0);
+        historyCount = 0;
+        return;
+    }
+
+    size_t loadedBytes = prefs.getBytes("history", restored, expectedBytes);
+    prefs.end();
+
+    if (loadedBytes != expectedBytes) {
+        prefs.begin("gol", false);
+        resetPersistedHistoryStore();
+        prefs.end();
+        webRestoreHistory(nullptr, 0);
+        historyCount = 0;
+        return;
+    }
+
+    webRestoreHistory(restored, storedCount);
+    historyCount = storedCount;
+}
+
+static void savePersistedHistory() {
+    SessionSummary historySnapshot[MAX_SESSION_HISTORY];
+    int count = webHistoryCount();
+
+    if (count < 0) {
+        count = 0;
+    }
+
+    if (count > MAX_SESSION_HISTORY) {
+        count = MAX_SESSION_HISTORY;
+    }
+
+    memset(historySnapshot, 0, sizeof(historySnapshot));
+    webCopyHistory(historySnapshot, MAX_SESSION_HISTORY);
+
+    prefs.begin("gol", false);
+    prefs.putUChar("version", NVS_VERSION);
+    prefs.putInt("count", count);
+    prefs.putBytes("history", historySnapshot, count * sizeof(SessionSummary));
+    prefs.end();
+}
+
+static void clearPersistedHistory() {
+    prefs.begin("gol", false);
+    resetPersistedHistoryStore();
+    prefs.end();
 }
 
 //seeding
@@ -130,8 +254,7 @@ void seedGrid(){
             }
         }
     }
-    memset(hashHistory, 0, sizeof(hashHistory));
-    hashIndex = 0; 
+    resetHashHistoryBuffer();
 }
 
 //session finalise
@@ -148,9 +271,12 @@ void finaliseSession(uint8_t reason) {
     s.generations = genCount;
     s.endReason  = reason;
 
-    webAddSession(s);
-    //main.cpp own copy of historyCount
-    historyCount++;
+    if (historyCount < MAX_SESSION_HISTORY) {
+        webAddSession(s);
+        //main.cpp own copy of historyCount
+        historyCount++;
+        savePersistedHistory();
+    }
 
     resetSessionTracking();   // reset per-session history
 }
@@ -262,6 +388,9 @@ static void publishSeedSnapshot() {
 
 static void beginFreshSession() {
     nextSessionAt = 0;
+    activeMaxGens = webMaxGens();
+    activeHashHistory = webHashHistory();
+    resetHashHistoryBuffer();
     resetSessionTracking();
     seedGrid();
     render();
@@ -376,14 +505,15 @@ uint8_t stepGeneration() {
 void setup() {
     Serial.begin(115200);
     mx.begin();
-    mx.control(MD_MAX72XX::INTENSITY, 4);
+    mx.control(MD_MAX72XX::INTENSITY, currentBrightness);
     mx.clear();
     randomSeed(analogRead(35));  // floating pin for entropy -> literal random number
     //basically taking random electromagnetic noise from environment (hand, power supply, RF interference)
     //will produce different number everytime (ADC noise sampling)
     ledcAttachPin(BUZZER_PIN, BUZZER_CH);
-    webUpdateConfig(DEFAULT_MAX_GENS);
+    webUpdateConfig(currentBrightness, activeMaxGens, activeHashHistory);
     webSetup();                  // start WiFi AP + server
+    loadPersistedHistory();
     seedGrid();
     mx.clear();
     publishState();
@@ -395,6 +525,11 @@ void loop() {
     if (millis() - lastStatusPush >= 120) {
         publishState();
         lastStatusPush = millis();
+    }
+
+    if (webBrightness() != currentBrightness) {
+        currentBrightness = webBrightness();
+        mx.control(MD_MAX72XX::INTENSITY, currentBrightness);
     }
 
     // Handle start request (from Run button)
@@ -429,13 +564,26 @@ void loop() {
     // Handle clear request from browser
     if (webClearRequested()) {
         webClearAck();
+        clearPersistedHistory();
         historyCount  = 0;
         sessionCount  = 0;
         nextSessionAt = 0;
         resetSessionTracking();
         simState      = IDLE;     // wait for manual start
         mx.clear();               // blank the display
-        publishState();
+        webUpdateData(
+            0,
+            0,
+            0,
+            0.0f,
+            0.0f,
+            0.0f,
+            readDensityPercent(),
+            0,
+            0,
+            0,
+            STATE_IDLE
+        );
     }
 
     // Auto-stop tone
@@ -463,7 +611,7 @@ void loop() {
 
         if (pop == 0) {
             handleSessionEnd(END_DIED);
-        } else if (genCount >= webMaxGens()) {
+        } else if (genCount >= activeMaxGens) {
             handleSessionEnd(END_MAX_GENS);
         } else if (isStagnant()) {
             handleSessionEnd(END_STAGNANT);

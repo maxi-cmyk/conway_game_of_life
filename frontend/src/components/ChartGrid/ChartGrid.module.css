@@ -1,56 +1,77 @@
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: var(--space-4);
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--space-5, 20px);
 }
 
 .card {
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: var(--space-4);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
+    grid-column: span 6;
+    min-width: 0;
 }
 
-.card canvas {
-    max-height: 200px;
-}
-
-.cardTitle {
-    font-size: var(--text-xs);
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.cardTitleRow {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+.card:last-child {
+    grid-column: 1 / -1;
 }
 
 .toggle {
     display: flex;
-    gap: var(--space-1);
+    gap: var(--space-2);
+    flex-wrap: wrap;
 }
 
 .toggleBtn {
-    font-size: var(--text-xs);
-    padding: 3px var(--space-2);
-    border-radius: var(--radius-sm);
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    transition: color var(--transition), border-color var(--transition);
+    min-height: 38px;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-secondary);
+    font-family: var(--font-ui);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: background var(--transition), color var(--transition), border-color var(--transition), transform var(--transition);
 }
 
 .toggleBtn:hover {
-    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+}
+
+.toggleBtn:focus-visible {
+    color: var(--text-primary);
+}
+
+.toggleBtn:active {
+    transform: translateY(1px);
+}
+
+.toggleBtn:disabled {
+    transform: none;
+    color: var(--text-dim);
+    background: rgba(255, 255, 255, 0.03);
+    border-color: rgba(255, 255, 255, 0.06);
 }
 
 .active {
-    color: var(--color-birth);
-    border-color: var(--color-birth);
+    background: rgba(255, 255, 255, 0.92);
+    color: var(--text-strong-ink);
+    border-color: rgba(255, 255, 255, 0.92);
+}
+
+@media (max-width: 960px) {
+    .card,
+    .card:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 720px) {
+    .toggle {
+        width: 100%;
+    }
 }

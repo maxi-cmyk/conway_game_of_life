@@ -1,6 +1,6 @@
 # Conway's Game of Life on ESP32
 
-An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed density and simulation speed, and exposes a tiny local HTTP API. A React + Vite dashboard polls that API for live metrics, charts, and per-session analysis.
+An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed density and simulation speed, and exposes a tiny local HTTP API. A React + Vite dashboard subscribes to a live SSE stream for metrics, charts, and per-session analysis.
 
 ## What The Project Does
 
@@ -14,9 +14,12 @@ An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed densi
   - `PAUSED` -> `Resume` or `Restart`
 - Prompts for a batch size of `5` to `30` sessions when you press `Start`.
 - Stores up to `30` completed session summaries for scatter plots and the session table.
-- Lets you tune the per-session generation cap and export session history as CSV or JSON.
+- Persists those completed session summaries across ESP32 reboots until you clear them.
+- Lets you tune matrix brightness, the per-session generation cap, and the stagnation window from the dashboard.
+- Adds four analysis views: density, autocorrelation, entropy vs generations, and peak population vs density.
+- Exports session history as CSV or JSON.
 
-`Start` begins a fresh batch and seeds a new grid. `Resume` continues the exact paused grid without reseeding. `Restart` reseeds the current session immediately.
+`Start` begins a fresh batch and seeds a new grid. `Resume` continues the exact paused grid without reseeding. `Restart` reseeds the current session immediately. Live updates stream into the dashboard over Server-Sent Events, so the charts only move when the board actually publishes a new snapshot.
 
 ## Repo Layout
 
@@ -24,7 +27,13 @@ An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed densi
 .
 ├── platformio.ini
 ├── README.md
-├── skills/
+├── analysis/
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── game_of_life.ipynb
+│   ├── data/
+│   └── models/
+├── docs/
 │   └── skills.md
 ├── src/
 │   ├── main.cpp
@@ -111,14 +120,44 @@ The repo already contains a working `platformio.ini`:
 platform = espressif32
 board = esp32dev
 framework = arduino
-monitor_port = /dev/cu.usbserial-310
-upload_port = /dev/cu.usbserial-310
+monitor_port = /dev/cu.usbserial-110
+upload_port = /dev/cu.usbserial-110
 monitor_speed = 115200
 lib_deps =
+    bblanchon/ArduinoJson @ ^7.1.0
+    ESP32Async/AsyncTCP @ ^3.3.2
+    ESP32Async/ESPAsyncWebServer @ ^3.6.0
     majicdesigns/MD_MAX72XX @ ^3.3.1
 ```
 
 If your serial device is different, update `monitor_port` and `upload_port`.
+
+### How to check the ESP32 port next time
+
+On macOS, the USB serial suffix can change after you unplug/replug the board. The fastest way to check it is:
+
+```bash
+ls /dev/cu.usbserial* /dev/tty.usbserial* 2>/dev/null
+```
+
+You will usually see something like:
+
+```bash
+/dev/cu.usbserial-110
+/dev/tty.usbserial-110
+```
+
+Use the `/dev/cu.usbserial-*` path for `monitor_port` and `upload_port`.
+
+If you are not sure which device is the ESP32:
+
+1. unplug the board
+2. run the `ls /dev/cu.usbserial* /dev/tty.usbserial* 2>/dev/null` command
+3. plug the board back in
+4. run the command again
+5. the new `/dev/cu.usbserial-*` entry is the one to use
+
+If upload still says the port is busy, close any Serial Monitor that already has the board open and try again.
 
 ### 3. Build / Upload
 
@@ -171,15 +210,15 @@ npm run build
 
 ## Dashboard Behavior
 
-The dashboard polls `/data` every `150ms`. Action buttons also trigger an immediate follow-up snapshot so state swaps feel instant instead of waiting on the next passive poll.
+The dashboard opens one `/events` Server-Sent Events stream for live snapshots. History and settings still use regular HTTP fetches, but the charts and live metrics now update only when the ESP32 publishes a changed snapshot.
 
 ### State Machine
 
 | State | Header buttons | Behavior |
 |---|---|---|
-| `IDLE` | `Start`, `Clear` | Prompts for a batch size from 5 to 30, then seeds a fresh run |
-| `RUNNING` | `Pause`, `Clear` | Advances generations continuously |
-| `PAUSED` | `Resume`, `Restart`, `Clear` | `Resume` keeps the same grid, `Restart` reseeds |
+| `IDLE` | `Start`, `Settings` | Prompts for a batch size from 5 to 30, then seeds a fresh run |
+| `RUNNING` | `Pause`, `Settings` | Advances generations continuously |
+| `PAUSED` | `Resume`, `Restart`, `Settings` | `Resume` keeps the same grid, `Restart` reseeds |
 
 ### Sessions
 
@@ -187,8 +226,10 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 - The header shows `session / batchTarget`.
 - A session ends when the grid stagnates, dies out completely, or hits the configured generation cap.
 - Finished sessions are pushed into the table and scatter plots immediately.
-- `Clear` wipes session history and returns the firmware to `IDLE`.
-- The analysis panel lets you change `maxGens` live and export the current session history as date-stamped CSV or JSON files.
+- `Clear History` wipes session history and returns the firmware to `IDLE`.
+- The header gear opens a dedicated settings section where you can change brightness, `maxGens`, and the stagnation window, then export the current session history as date-stamped CSV or JSON files.
+- The export section includes an optional `Export Label` field so Phase 5 runs can be named consistently, for example `run1_low` or `run4_edge`.
+- Session history now survives ESP32 reboots until you clear it.
 
 ## API
 
@@ -196,13 +237,15 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 
 | Endpoint | Method | Purpose |
 |---|---|---|
+| `/events` | `GET` | Server-Sent Events stream for live snapshots and settings updates |
 | `/data` | `GET` | Current live snapshot |
 | `/history` | `GET` | Completed session summaries |
 | `/run?count=N` | `POST` | Start a fresh batch of `5` to `30` sessions |
 | `/restart` | `POST` | Reseed the current session immediately |
 | `/pause` | `POST` | Pause mid-session |
 | `/resume` | `POST` | Resume the paused session |
-| `/settings?maxGens=N` | `POST` | Update the per-session generation cap |
+| `/settings` | `GET` | Current runtime settings |
+| `/settings` | `POST` | Update any subset of `brightness`, `maxGens`, and `hashHistory` with a JSON body |
 | `/clear` | `POST` | Clear history and return to idle |
 
 ### `/data` shape
@@ -243,22 +286,42 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 }
 ```
 
+### `/settings` shape
+
+```json
+{
+  "brightness": 4,
+  "maxGens": 400,
+  "hashHistory": 6
+}
+```
+
 ## Frontend Architecture
 
 - `frontend/src/hooks/useSimData.js`
-  - owns all polling, action POSTs, chart history, and session history
+  - owns the SSE stream, action POSTs, chart history, and session history
 - `frontend/src/components/Header/`
   - live metrics, state badge, and action buttons
 - `frontend/src/components/ChartGrid/`
   - population, entropy, and probability charts
 - `frontend/src/components/AnalysisPanel/`
-  - collapsible settings/export controls, density scatter, autocorrelation scatter, and session table
+  - collapsible runtime settings, export controls, four scatter plots, and session table
 - `frontend/src/tokens.css`
   - global design tokens
 - `frontend/src/index.css`
   - minimal global reset
 
 Only `tokens.css` and `index.css` are global. Everything else is component-scoped CSS Modules.
+
+## Phase 5 And 6 Prep
+
+The repo now includes an `analysis/` workspace so data collection and notebook work can start immediately:
+
+- [analysis/README.md](/Users/maxi/Desktop/conway_game_of_life/analysis/README.md) explains the export and analysis workflow
+- [analysis/requirements.txt](/Users/maxi/Desktop/conway_game_of_life/analysis/requirements.txt) contains the Python dependencies
+- [analysis/game_of_life.ipynb](/Users/maxi/Desktop/conway_game_of_life/analysis/game_of_life.ipynb) is a starter notebook for loading, cleaning, plotting, and modeling the CSV exports
+- `analysis/data/` is where exported CSV files should be placed
+- `analysis/models/` is reserved for trained model artifacts later
 
 ## Simulation Notes
 
@@ -333,6 +396,8 @@ The hardware gives you the visual and audio experience of the simulation, but th
 - `P(birth)` and `P(death)` show the pressure of change generation to generation
 - density links initial conditions to session outcomes
 - autocorrelation hints at how much one generation predicts the next
+- entropy vs generations checks whether longer-lived runs also stay more disordered
+- peak population vs density shows where the grid supports the largest live-cell bursts
 - the settings/export controls make it easy to tune run length and keep the raw session data
 
 That is the real motivation behind the project. It is not only an LED-matrix demo. It is a small physical lab for exploring how simple deterministic rules can produce order, collapse, oscillation, and a narrow edge-of-chaos regime that feels surprisingly alive.
@@ -353,15 +418,48 @@ Checked locally:
 - The dashboard code path now reflects the current `IDLE / RUNNING / PAUSED` flow.
 - The README, `.env.example`, and API docs now match the current codebase.
 
-Manual smoke test after flashing:
+Manual test guide after flashing:
+
+### Phase 1
 
 - press `Start`, choose `5`, and confirm the header shows `1 / 5`
 - let one session finish and confirm the header advances to `2 / 5`
-- lower `maxGens` in Analysis, save it, and confirm later sessions stop at the new cap
+- during the short between-session transition, press `Clear History` and confirm the dashboard responds immediately instead of waiting for a blocking delay
 - press `Pause`, then `Resume`, and confirm the same grid continues
 - press `Restart` and confirm the grid reseeds immediately
-- press `Clear` and confirm the header returns to `0 / 0`
-- export CSV or JSON and confirm the saved file contains the session records
+- export CSV or JSON and confirm the saved file contains the finished session records
+- confirm end reasons are represented in the session table:
+  - `stagnant` from a naturally repeating/stable run
+  - `max gens` by lowering `maxGens` and finishing a run at the cap
+  - `died` from a run that collapses completely dark
+
+### Phase 2
+
+- open the header gear and confirm the settings section appears as its own top-level area
+- change brightness and confirm the LED matrix updates immediately
+- change `maxGens`, start a fresh run, and confirm only the next freshly seeded session uses the new cap
+- change the stagnation window, start a fresh run, and confirm only the next freshly seeded session uses the new window
+- open `Session Analysis` and confirm:
+  - with no sessions, the charts show empty-state guidance instead of blank canvases
+  - with saved sessions, the four analysis charts and session table render correctly
+
+### Phase 3.1
+
+- finish a few sessions, then refresh the page and confirm the same session history still appears
+- power-cycle the ESP32, reopen the dashboard, and confirm the session history is still present
+- after reboot, confirm the dashboard returns in `IDLE` rather than resuming a partially completed batch
+- press `Clear History`, refresh the page, and confirm the history is empty
+- reboot once more after clearing and confirm the history stays empty
+- if you reach the `30`-session cap, export first, then clear before collecting more data
+
+### Phase 4.1
+
+- load the dashboard and confirm the live-link indicator moves from connecting to connected without needing a manual refresh
+- start a run and confirm the live metrics and charts only change when generations advance, not on a fixed timer
+- pause the session and turn the potentiometer; confirm density still updates while paused
+- finish a session and confirm the session table refreshes as soon as the total session count increases
+- keep the dashboard open, reboot the ESP32, and confirm the live-link indicator drops to reconnecting/offline and then recovers once the board is back
+- open a second dashboard tab and confirm both tabs receive live updates without breaking the first one
 
 Not verified in this environment:
 

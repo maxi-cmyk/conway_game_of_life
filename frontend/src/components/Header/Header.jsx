@@ -1,107 +1,149 @@
-import config from '../../config';
+import { useEffect } from 'react';
 import styles from './Header.module.css';
 
 export function Header({
-    density, pop, born, died, entropy,
-    pBirth, pDeath, session, batchTarget, totalSessions,
-    state, onStart, onRestart, onPause, onResume, onClear
+    session, batchTarget, totalSessions,
+    state, streamStatus, onStart, onRestart, onPause, onResume,
+    viewLabel,
 }) {
-    const badgeClass = {
-        IDLE: styles.idle,
-        RUNNING: styles.running,
-        PAUSED: styles.paused,
-    }[state] || styles.idle;
+    const streamUnavailable = streamStatus === 'reconnecting' || streamStatus === 'disconnected';
+    const controlsDisabled = streamStatus !== 'connected';
+    const displayState = streamUnavailable && state === 'RUNNING'
+        ? 'PAUSED'
+        : state;
 
-    const badgeLabel = {
+    const statusKey = streamUnavailable || streamStatus === 'connecting'
+        ? streamStatus
+        : displayState;
+
+    const statusClass = {
+        connecting: styles.statusConnecting,
+        reconnecting: styles.statusReconnecting,
+        disconnected: styles.statusDisconnected,
+        IDLE: styles.statusIdle,
+        RUNNING: styles.statusRunning,
+        PAUSED: styles.statusPaused,
+    }[statusKey] || styles.statusIdle;
+
+    const statusLabel = {
+        connecting: 'Connecting',
+        reconnecting: 'Reconnecting',
+        disconnected: 'Offline',
         IDLE: 'Idle',
         RUNNING: 'Running',
         PAUSED: 'Paused',
-    }[state] || 'Idle';
+    }[statusKey] || 'Idle';
 
-    const sessionDisplay = batchTarget > 0
-        ? `${session} / ${batchTarget}`
-        : '0 / 0';
+    const paddedSession = String(Math.max(session, 0)).padStart(2, '0');
+    const paddedTarget = String(Math.max(batchTarget, 0)).padStart(2, '0');
+    const paddedStored = String(Math.max(totalSessions, 0)).padStart(2, '0');
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (event.defaultPrevented || event.repeat || event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+            }
 
-    const shouldShowExportReminder = state === 'IDLE' && totalSessions > 0;
-    const exportReminder = totalSessions >= config.maxSessions
-        ? `History is full at ${config.maxSessions} sessions. Export your results before starting again.`
-        : `Batch finished. Export your results soon — the dashboard keeps up to ${config.maxSessions} sessions.`;
+            if (event.target instanceof HTMLElement) {
+                const tagName = event.target.tagName;
+
+                if (event.target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT') {
+                    return;
+                }
+            }
+
+            if (controlsDisabled) {
+                return;
+            }
+
+            const key = event.key.toLowerCase();
+
+            if (displayState === 'IDLE' && key === 's') {
+                event.preventDefault();
+                onStart();
+            } else if (displayState === 'RUNNING' && key === 'p') {
+                event.preventDefault();
+                onPause();
+            } else if (displayState === 'PAUSED' && key === 'c') {
+                event.preventDefault();
+                onResume();
+            } else if (displayState === 'PAUSED' && key === 'r') {
+                event.preventDefault();
+                onRestart();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [controlsDisabled, displayState, onPause, onRestart, onResume, onStart]);
 
     return (
         <header className={styles.header}>
-            <div className={styles.top}>
-                <div className={styles.titleRow}>
-                    <h1 className={styles.title}>Conway's Game of Life</h1>
-                    <span className={`${styles.badge} ${badgeClass}`}>
-                        {badgeLabel}
+            <div className={styles.left}>
+                <div className={styles.brandRow}>
+                    <span className={styles.brand}>LIFE_TERMINAL</span>
+                    <span className={styles.divider}>|</span>
+                    <span className={`${styles.status} ${statusClass}`}>
+                        STATUS: [{statusLabel.toUpperCase()}]
                     </span>
                 </div>
+            </div>
+
+            <div className={styles.center}>
+                {viewLabel}
+            </div>
+
+            <div className={styles.right}>
+                <div className={styles.batchMeta}>
+                    <span className={styles.metaLabel}>BATCH:</span>
+                    <span className={styles.metaValue}>{paddedSession}/{paddedTarget}</span>
+                    <span className={styles.metaSeparator}>|</span>
+                    <span className={styles.metaLabel}>STORED:</span>
+                    <span className={styles.metaValue}>{paddedStored}</span>
+                </div>
+
                 <div className={styles.actions}>
-                    {state === 'IDLE' && (
+                    {displayState === 'IDLE' && (
                         <button
                             className={styles.startBtn}
                             onClick={onStart}
+                            disabled={controlsDisabled}
+                            aria-keyshortcuts="S"
                         >
-                            Start
+                            [S]TART
                         </button>
                     )}
-                    {state === 'RUNNING' && (
+                    {displayState === 'RUNNING' && (
                         <button
                             className={styles.pauseBtn}
                             onClick={onPause}
+                            disabled={controlsDisabled}
+                            aria-keyshortcuts="P"
                         >
-                            Pause
+                            [P]AUSE
                         </button>
                     )}
-                    {state === 'PAUSED' && (
+                    {displayState === 'PAUSED' && (
                         <>
                             <button
                                 className={styles.resumeBtn}
                                 onClick={onResume}
+                                disabled={controlsDisabled}
+                                aria-keyshortcuts="C"
                             >
-                                Resume
+                                [C]ONTINUE
                             </button>
                             <button
                                 className={styles.restartBtn}
                                 onClick={onRestart}
+                                disabled={controlsDisabled}
+                                aria-keyshortcuts="R"
                             >
-                                Restart
+                                [R]ESTART
                             </button>
                         </>
                     )}
-                    <button
-                        className={styles.clearBtn}
-                        onClick={onClear}
-                    >
-                        Clear
-                    </button>
                 </div>
             </div>
-            <div className={styles.metrics}>
-                <Metric label="Population" value={pop}                        color="var(--color-pop)" />
-                <Metric label="Born"       value={born}                       color="var(--color-birth)" />
-                <Metric label="Died"       value={died}                       color="var(--color-death)" />
-                <Metric label="Entropy"    value={entropy.toFixed(3)}         color="var(--color-entropy)" />
-                <Metric label="Density"    value={`${density}%`}              color="var(--text-primary)" />
-                <Metric label="P(Birth)"   value={pBirth.toFixed(3)}          color="var(--color-birth)" />
-                <Metric label="P(Death)"   value={pDeath.toFixed(3)}          color="var(--color-death)" />
-                <Metric label="Session"    value={sessionDisplay}             color="var(--text-secondary)" />
-                <Metric label="Total"      value={totalSessions}              color="var(--text-secondary)" />
-            </div>
-            {shouldShowExportReminder ? (
-                <p className={styles.reminder}>
-                    {exportReminder}
-                </p>
-            ) : null}
         </header>
-    );
-}
-
-function Metric({ label, value, color }) {
-    return (
-        <div className={styles.metric}>
-            <span className={styles.metricLabel}>{label}</span>
-            <span className={styles.metricValue} style={{ color }}>{value}</span>
-        </div>
     );
 }

@@ -8,6 +8,7 @@ export default defineConfig({
     server: {
         proxy: {
             '/data':    { target, changeOrigin: true },
+            '/events':  { target, changeOrigin: true },
             '/history': { target, changeOrigin: true },
             '/pause':   { target, changeOrigin: true },
             '/restart': { target, changeOrigin: true },

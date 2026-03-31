@@ -27,9 +27,9 @@ function getOptions() {
                 ticks: { color: textSecondary, padding: 8 },
             },
             y: {
-                min: -1,
-                max: 1,
-                title: { display: true, text: 'Autocorrelation', color: textSecondary },
+                min: 0,
+                max: 256,
+                title: { display: true, text: 'Peak Population', color: textSecondary },
                 grid: { color: border },
                 ticks: { color: textSecondary, padding: 8 },
             },
@@ -49,28 +49,28 @@ function getOptions() {
     };
 }
 
-export function AutocorrScatter({ sessions }) {
+export function PeakPopVsDensity({ sessions }) {
     if (!sessions || sessions.length === 0) {
         return (
             <ExpandableChartCard
-                title="Autocorrelation vs Density"
+                title="Peak Population vs Density"
                 emptyTitle="No finished sessions yet"
-                emptyBody="Finish a session batch to see how predictable each density range becomes over time."
+                emptyBody="Finish a session batch to compare seed density against the peak population each run reaches."
             />
         );
     }
 
     const data = {
         datasets: [{
-            label: 'Lag-1 autocorrelation',
+            label: 'Sessions',
             data: sessions.map(session => ({
                 x: session.density ?? 0,
-                y: (session.autocorr ?? 0) / 100,
+                y: session.peakPop ?? 0,
             })),
-            backgroundColor: readToken('--color-autocorr'),
+            backgroundColor: readToken('--color-pop'),
             pointRadius: 4,
         }],
     };
 
-    return <ExpandableChartCard title="Autocorrelation vs Density" renderChart={() => <Scatter data={data} options={getOptions()} />} />;
+    return <ExpandableChartCard title="Peak Population vs Density" renderChart={() => <Scatter data={data} options={getOptions()} />} />;
 }

@@ -1,5 +1,6 @@
 import { Scatter } from 'react-chartjs-2';
-import styles from '../charts/Charts.module.css';
+import config from '../../config';
+import { ExpandableChartCard } from '../charts/ExpandableChartCard';
 import { readToken } from '../../lib/theme';
 
 function getOptions() {
@@ -9,30 +10,56 @@ function getOptions() {
     return {
         responsive: true,
         maintainAspectRatio: false,
+        layout: {
+            padding: {
+                top: 14,
+                right: 8,
+                bottom: 0,
+                left: 4,
+            },
+        },
         scales: {
             x: {
-                min: 15,
-                max: 55,
+                min: config.densityMin,
+                max: config.densityMax,
                 title: { display: true, text: 'Density %', color: textSecondary },
                 grid: { color: border },
+                ticks: { color: textSecondary, padding: 8 },
             },
             y: {
                 min: 0,
                 max: 1,
                 title: { display: true, text: 'Probability', color: textSecondary },
                 grid: { color: border },
+                ticks: { color: textSecondary, padding: 8 },
             },
         },
         plugins: {
             legend: {
                 display: true,
-                labels: { usePointStyle: true, padding: 12 },
+                position: 'bottom',
+                labels: {
+                    usePointStyle: true,
+                    padding: 16,
+                    color: textSecondary,
+                    font: { size: 11 },
+                },
             },
         },
     };
 }
 
 export function DensityScatter({ sessions }) {
+    if (!sessions || sessions.length === 0) {
+        return (
+            <ExpandableChartCard
+                title="Density Function"
+                emptyTitle="No finished sessions yet"
+                emptyBody="Finish a session batch to compare density against average birth and death pressure."
+            />
+        );
+    }
+
     const data = {
         datasets: [
             {
@@ -56,12 +83,5 @@ export function DensityScatter({ sessions }) {
         ],
     };
 
-    return (
-        <section className={styles.card}>
-            <div className={styles.title}>Density Function</div>
-            <div className={styles.canvas}>
-                <Scatter data={data} options={getOptions()} />
-            </div>
-        </section>
-    );
+    return <ExpandableChartCard title="Density Function" renderChart={() => <Scatter data={data} options={getOptions()} />} />;
 }

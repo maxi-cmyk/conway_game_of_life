@@ -1,19 +1,24 @@
 :root {
     /* Surfaces */
-    --bg-base:      #0a0a0a;
-    --bg-surface:   #111111;
-    --bg-elevated:  #1a1a1a;
-    --bg-hover:     #222222;
+    --bg-base:      #06080d;
+    --bg-surface:   rgba(15, 18, 27, 0.72);
+    --bg-panel:     rgba(18, 22, 32, 0.78);
+    --bg-elevated:  rgba(255, 255, 255, 0.06);
+    --bg-hover:     rgba(255, 255, 255, 0.08);
+    --bg-sidebar:   rgba(10, 13, 20, 0.72);
 
     /* Borders */
-    --border:       #222222;
-    --border-light: #2a2a2a;
+    --border:       rgba(88, 96, 110, 0.72);
+    --border-light: rgba(130, 140, 158, 0.36);
+    --border-subtle: rgba(255, 255, 255, 0.08);
 
     /* Text */
-    --text-primary:   #ffffff;
-    --text-secondary: #888888;
-    --text-muted:     #444444;
-    --text-strong:    #000000;
+    --text-primary:    #e8edf5;
+    --text-secondary:  #c7ced8;
+    --text-muted:      #97a0ad;
+    --text-dim:        #68717d;
+    --text-strong:     #ffffff;
+    --text-strong-ink: #000000;
 
     /* Semantic colours — each colour means exactly one thing */
     --color-birth:    #4CAF50;   /* births, growth, running state */
@@ -29,8 +34,10 @@
     --color-autocorr-soft: rgba(179, 136, 255, 0.12);
 
     /* Typography */
-    --font-ui:   system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    --font-mono: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    --font-ui:      "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+    --font-mono:    "JetBrains Mono", "Fira Code", "SF Mono", monospace;
+    --font-copy:    "Space Grotesk", "Helvetica Neue", sans-serif;
+    --font-display: "Space Grotesk", "JetBrains Mono", sans-serif;
 
     /* Type scale */
     --text-xs:  11px;
@@ -47,11 +54,17 @@
     --space-6:  24px;
     --space-8:  32px;
     --space-12: 48px;
+    --space-16: 64px;
 
     /* Radii */
-    --radius-sm: 4px;
-    --radius-md: 8px;
-    --radius-lg: 12px;
+    --radius-sm: 14px;
+    --radius-md: 22px;
+    --radius-lg: 32px;
+
+    /* Effects */
+    --shadow-sm: 0 18px 32px rgba(0, 0, 0, 0.18);
+    --shadow-lg: 0 30px 80px rgba(0, 0, 0, 0.34);
+    --glass-blur: 22px;
 
     /* Transitions */
     --transition: 150ms ease;

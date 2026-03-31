@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import {
     Chart as ChartJS,
+    ScatterController,
     CategoryScale, LinearScale,
     PointElement, LineElement,
     Title, Tooltip, Legend, Filler
@@ -14,6 +15,7 @@ import { readToken } from './lib/theme';
 
 // Register all Chart.js components — including Filler for CI bands
 ChartJS.register(
+    ScatterController,
     CategoryScale, LinearScale,
     PointElement, LineElement,
     Title, Tooltip, Legend, Filler

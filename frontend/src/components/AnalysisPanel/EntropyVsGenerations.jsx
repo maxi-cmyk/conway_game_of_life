@@ -1,5 +1,4 @@
 import { Scatter } from 'react-chartjs-2';
-import config from '../../config';
 import { ExpandableChartCard } from '../charts/ExpandableChartCard';
 import { readToken } from '../../lib/theme';
 
@@ -20,16 +19,14 @@ function getOptions() {
         },
         scales: {
             x: {
-                min: config.densityMin,
-                max: config.densityMax,
-                title: { display: true, text: 'Density %', color: textSecondary },
+                title: { display: true, text: 'Generations', color: textSecondary },
                 grid: { color: border },
                 ticks: { color: textSecondary, padding: 8 },
             },
             y: {
-                min: -1,
+                min: 0,
                 max: 1,
-                title: { display: true, text: 'Autocorrelation', color: textSecondary },
+                title: { display: true, text: 'Avg Entropy', color: textSecondary },
                 grid: { color: border },
                 ticks: { color: textSecondary, padding: 8 },
             },
@@ -49,28 +46,28 @@ function getOptions() {
     };
 }
 
-export function AutocorrScatter({ sessions }) {
+export function EntropyVsGenerations({ sessions }) {
     if (!sessions || sessions.length === 0) {
         return (
             <ExpandableChartCard
-                title="Autocorrelation vs Density"
+                title="Entropy vs Generations"
                 emptyTitle="No finished sessions yet"
-                emptyBody="Finish a session batch to see how predictable each density range becomes over time."
+                emptyBody="Finish a session batch to compare how long sessions run against their average entropy."
             />
         );
     }
 
     const data = {
         datasets: [{
-            label: 'Lag-1 autocorrelation',
+            label: 'Sessions',
             data: sessions.map(session => ({
-                x: session.density ?? 0,
-                y: (session.autocorr ?? 0) / 100,
+                x: session.generations ?? 0,
+                y: (session.avgEntropy ?? 0) / 100,
             })),
-            backgroundColor: readToken('--color-autocorr'),
+            backgroundColor: readToken('--color-entropy'),
             pointRadius: 4,
         }],
     };
 
-    return <ExpandableChartCard title="Autocorrelation vs Density" renderChart={() => <Scatter data={data} options={getOptions()} />} />;
+    return <ExpandableChartCard title="Entropy vs Generations" renderChart={() => <Scatter data={data} options={getOptions()} />} />;
 }

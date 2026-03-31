@@ -3,7 +3,7 @@ name: frontend-dashboard
 description: >
   Use this skill when building React + Vite dashboard frontends that consume
   a hardware API (ESP32 or similar). Covers project scaffold, component
-  architecture, custom hooks for polling, Chart.js integration, CSS Modules
+  architecture, custom hooks for live streaming, Chart.js integration, CSS Modules
   with design tokens, and responsive layout. Apply whenever the user asks to
   build, extend, or refactor the Game of Life dashboard or any similar
   hardware-driven web frontend.
@@ -50,16 +50,18 @@ If an element cannot be classified, it does not belong on the screen.
 
 ```
 frontend/
-├── .env                          — REACT_APP_API_URL=http://192.168.1.100
+├── .env                          — VITE_API_URL=http://192.168.1.100
 ├── .env.example                  — committed, shows required vars without values
 ├── vite.config.js                — proxy config for dev
 ├── index.html
 ├── package.json
 └── src/
-    ├── main.jsx                  — React root, imports tokens.css globally
+    ├── main.jsx                  — React root, imports tokens.css + index.css globally
     ├── App.jsx                   — top-level layout only, no logic
+    ├── App.module.css            — app shell layout
+    ├── index.css                 — global reset + focus baseline only
     ├── tokens.css                — all design tokens as CSS variables
-    ├── config.js                 — API base URL, poll interval, window sizes
+    ├── config.js                 — API base URL and chart window sizes
     ├── hooks/
     │   └── useSimData.js         — ALL fetch logic and data state lives here
     ├── lib/
@@ -68,9 +70,6 @@ frontend/
         ├── Header/
         │   ├── Header.jsx
         │   └── Header.module.css
-        ├── StatusBar/
-        │   ├── StatusBar.jsx
-        │   └── StatusBar.module.css
         ├── ChartGrid/
         │   ├── ChartGrid.jsx     — responsive side-by-side / stacked layout
         │   └── ChartGrid.module.css
@@ -81,15 +80,16 @@ frontend/
         ├── AnalysisPanel/
         │   ├── AnalysisPanel.jsx — collapsible Tier 3 wrapper
         │   ├── AnalysisPanel.module.css
+        │   ├── SettingsPanel.jsx
+        │   ├── SettingsPanel.module.css
         │   ├── DensityScatter.jsx
         │   ├── AutocorrScatter.jsx
+        │   ├── EntropyVsGenerations.jsx
+        │   ├── PeakPopVsDensity.jsx
         │   └── SessionTable.jsx
-        └── Controls/
-            ├── Controls.jsx      — clear history button only
-            └── Controls.module.css
 ```
 
-Every component lives in its own folder with a co-located CSS Module. No global styles except `tokens.css` and a minimal `main.css` reset.
+Every component lives in its own folder with a co-located CSS Module. No global styles except `tokens.css` and a minimal `index.css` reset/focus baseline.
 
 ---
 
@@ -150,9 +150,14 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      '/events':  { target: 'http://192.168.1.100', changeOrigin: true },
       '/data':    { target: 'http://192.168.1.100', changeOrigin: true },
       '/history': { target: 'http://192.168.1.100', changeOrigin: true },
+      '/pause':   { target: 'http://192.168.1.100', changeOrigin: true },
       '/restart': { target: 'http://192.168.1.100', changeOrigin: true },
+      '/resume':  { target: 'http://192.168.1.100', changeOrigin: true },
+      '/run':     { target: 'http://192.168.1.100', changeOrigin: true },
+      '/settings': { target: 'http://192.168.1.100', changeOrigin: true },
       '/clear':   { target: 'http://192.168.1.100', changeOrigin: true },
     }
   }
@@ -168,7 +173,6 @@ The proxy means all fetch calls use relative paths (`fetch('/data')`) in develop
 ```javascript
 const config = {
     apiBase:         import.meta.env.VITE_API_URL || '',
-    pollInterval:    150,
     rollingSize:     20,
     persistentSize:  200,
     timePoints:      100,
@@ -336,7 +340,6 @@ export function useSimData() {
     const [windowMode, setWindowMode] = useState('rolling');
 
     // Internal refs — don't need to trigger re-renders
-    const genCountRef         = useRef(0);
     const lastTotalSessionsRef = useRef(0);
 
     const fetchHistory = useCallback(() => {
@@ -356,47 +359,27 @@ export function useSimData() {
     useEffect(() => {
         fetchHistory();
 
-        const id = setInterval(() => {
-            fetch(`${config.apiBase}/data`)
-                .then(r => r.json())
-                .then(d => {
-                    genCountRef.current++;
-                    setSnap(d);
+        const es = new EventSource(`${config.apiBase}/events`);
 
-                    push(null, setPopHistory,     d.pop,     config.timePoints);
-                    push(null, setEntropyHistory, d.entropy, config.timePoints);
+        es.addEventListener('snapshot', event => {
+            const d = JSON.parse(event.data);
+            setSnap(d);
 
-                    push(null, setPBirthRolling,    d.pBirth, config.rollingSize);
-                    push(null, setPDeathRolling,    d.pDeath, config.rollingSize);
-                    push(null, setPBirthPersistent, d.pBirth, config.persistentSize);
-                    push(null, setPDeathPersistent, d.pDeath, config.persistentSize);
+            push(null, setPopHistory,     d.pop,     config.timePoints);
+            push(null, setEntropyHistory, d.entropy, config.timePoints);
 
-                    // Session ended
-                    if (d.totalSessions > lastTotalSessionsRef.current) {
-                        lastTotalSessionsRef.current = d.totalSessions;
-                        fetchHistory();
+            push(null, setPBirthRolling,    d.pBirth, config.rollingSize);
+            push(null, setPDeathRolling,    d.pDeath, config.rollingSize);
+            push(null, setPBirthPersistent, d.pBirth, config.persistentSize);
+            push(null, setPDeathPersistent, d.pDeath, config.persistentSize);
 
-                        // Compute autocorrelation from persistent window
-                        setPBirthPersistent(prev => {
-                            const ac = autocorrelation(prev);
-                            setAutocorrPoints(pts => [
-                                ...pts,
-                                { x: d.density, y: parseFloat(ac.toFixed(3)) }
-                            ]);
-                            return prev;
-                        });
+            if (d.totalSessions > lastTotalSessionsRef.current) {
+                lastTotalSessionsRef.current = d.totalSessions;
+                fetchHistory();
+            }
+        });
 
-                        // Reset time series for new session
-                        setPopHistory([]);
-                        setEntropyHistory([]);
-                        setPBirthRolling([]);
-                        setPDeathRolling([]);
-                    }
-                })
-                .catch(() => {});
-        }, config.pollInterval);
-
-        return () => clearInterval(id);
+        return () => es.close();
     }, [fetchHistory, push]);
 
     const restart = useCallback(() => {
@@ -486,7 +469,7 @@ ChartJS.defaults.font.size         = 11;
 ChartJS.defaults.plugins.legend.display = false;  // each chart controls its own
 ```
 
-`animation: false` is mandatory. At 150ms poll intervals, animations start before the previous one finishes — the chart never looks stable and burns CPU.
+`animation: false` is mandatory. Live dashboards should never be mid-animation while new snapshots are still arriving.
 
 ---
 
@@ -601,15 +584,113 @@ color: #4CAF50;
 
 ---
 
+## Layout & Styling Memory
+
+These are the layout rules the current dashboard now relies on. Preserve them unless the user explicitly asks for a redesign.
+
+### Header hierarchy
+- The dashboard now uses a terminal shell, not a soft SaaS header.
+- The top bar is a single dense status strip with:
+  - left: product identity + current status text
+  - center: contextual terminal banner text
+  - right: batch/stored counters + lifecycle buttons + gear
+- The header no longer contains the large live metric groups. Those live in the dashboard body as terminal stat panels.
+- Lifecycle controls stay on the right side of the same row:
+  - `Start` in `IDLE`
+  - `Pause` in `RUNNING`
+  - `Continue` plus `Restart` in `PAUSED`
+- The gear still routes to the dedicated settings view.
+
+### Surface hierarchy
+- Keep dark mode and the semantic data colors exactly as the meaning system:
+  - population = blue
+  - entropy = yellow
+  - birth = green
+  - death = red
+  - paused = amber
+  - autocorrelation = violet
+- The shell is intentionally sharper and more terminal-like:
+  - square corners
+  - thin hard borders
+  - dense uppercase labeling
+  - CRT/scanline overlay
+- Use the terminal shell consistently:
+  - fixed top bar
+  - left navigation rail on desktop
+  - bottom system footer
+  - dashboard body panels with terminal metadata styling
+
+### Interaction rules
+- Primary controls in the shell can be visually denser than before, but still need a comfortable hit area:
+  - header action buttons may be around `36px` high in desktop terminal mode
+  - settings/export/reset controls should stay at least `48px` high
+- Every interactive control must have:
+  - default
+  - hover
+  - `:focus-visible`
+  - active/pressed
+  - disabled
+- Keep focus handling global only as a baseline in `index.css`; component-specific styling still belongs in CSS Modules.
+
+### Advanced area
+- Settings live in their own top-level view, opened from the header gear button or the sidebar.
+- `Session Analysis` is also its own dedicated view, selected from the sidebar/mobile nav.
+- Do not reintroduce collapsible nesting for analysis/settings unless the user explicitly asks for it.
+- Keep runtime settings, exports, and reset actions in the standalone settings view, visually separated by spacing and subheadings.
+- `Clear History` stays tertiary and visually subdued.
+- There is no user-facing refresh interval once SSE is active; live charts stream automatically from the board.
+
+### Terminal shell rules
+- Fonts:
+  - use `JetBrains Mono` for body, live values, and UI chrome
+  - use `Space Grotesk` for strong display labels like the shell title
+- The dashboard body uses three primary views:
+  - `Dashboard`
+  - `Session Analysis`
+  - `Settings`
+- Desktop uses a left nav rail. Mobile collapses this into stacked top buttons.
+- The dashboard view includes:
+  - terminal stat panels for `Live Activity` and `Rates & Density`
+  - the existing live charts unchanged in meaning
+  - a decorative terminal viewport / command bar area for atmosphere
+- Keep the actual data visualizations real. Do not replace Chart.js charts with fake bar art.
+
+### Empty states
+- Analysis charts must not render as unexplained blank canvases when there are zero sessions.
+- Each chart gets a short empty-state explanation plus the action context: finish a session batch first.
+- Session table already has an explicit empty state and should keep it.
+
+### Copy conventions
+- Prefer plain labels over dense shorthand:
+  - `Birth Prob.` / `Death Prob.` over `P(Birth)` / `P(Death)`
+  - `Stored` over vague `Total`
+  - `Peak Population` / `End Reason` in tables
+- Keep the tone operational and literal. This dashboard is a tool, not a marketing page.
+
+### Responsive reduction
+- On smaller screens:
+  - hide the left sidebar and replace it with stacked mobile nav buttons
+  - stack lifecycle buttons instead of compressing them
+  - collapse metric panels and chart layouts to one column
+  - keep settings/export/reset actions full-width
+- Reduce by simplifying and stacking, not by shrinking typography or cramming controls tighter.
+
+### Contrast/readability
+- Semantic data colors stay vivid.
+- Neutral support text in dark mode must stay readable; avoid overly dim muted text for labels and helper copy.
+- Use monospace only for live numbers and tabular values.
+
+---
+
 ## Anti-Patterns to Avoid
 
 | Anti-Pattern | Why | Fix |
 |---|---|---|
 | Fetching in a component | Creates duplicate requests, hard to test | Always fetch in `useSimData` |
 | Raw hex in component CSS | Can't theme, easy to diverge | Always use CSS variables |
-| `useEffect` reading stale state | Silent bugs in polling | Use functional updater `setState(prev => ...)` |
+| `useEffect` reading stale state | Silent bugs in live stream reconciliation | Use functional updater `setState(prev => ...)` |
 | Animating `height` for collapse | Triggers reflow, jank | Use `display: none` toggle or `max-height` trick |
-| Chart.js without `animation: false` | Perpetually mid-animation at 150ms | Set globally in `main.jsx` |
+| Chart.js without `animation: false` | Perpetually mid-animation during live updates | Set globally in `main.jsx` |
 | Forgetting `Filler` registration | CI bands silently fail | Register in `main.jsx` with all other components |
 | Hardcoding ESP32 IP in components | Breaks on IP change | Use `config.js` and `.env` |
 | `process.env.REACT_APP_*` | CRA syntax, broken in Vite | Use `import.meta.env.VITE_*` |

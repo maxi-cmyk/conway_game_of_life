@@ -7,13 +7,14 @@ An ESP32 drives a 32×8 MAX7219 LED matrix, reads a potentiometer for seed densi
 - Runs Conway's Game of Life on a 32×8 toroidal grid.
 - Uses the potentiometer to control both seed density and generation delay.
 - Plays short buzzer tones when births or deaths dominate a generation.
-- Detects stagnation and rolls into the next session automatically.
+- Ends sessions on stagnation, total death, or a configurable generation cap.
 - Lets the dashboard control three states:
   - `IDLE` -> `Start`
   - `RUNNING` -> `Pause`
   - `PAUSED` -> `Resume` or `Restart`
 - Prompts for a batch size of `5` to `30` sessions when you press `Start`.
 - Stores up to `30` completed session summaries for scatter plots and the session table.
+- Lets you tune the per-session generation cap and export session history as CSV or JSON.
 
 `Start` begins a fresh batch and seeds a new grid. `Resume` continues the exact paused grid without reseeding. `Restart` reseeds the current session immediately.
 
@@ -184,9 +185,10 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 
 - `Start` asks how many sessions to run: `5` to `30`.
 - The header shows `session / batchTarget`.
-- A session ends when the grid stagnates.
+- A session ends when the grid stagnates, dies out completely, or hits the configured generation cap.
 - Finished sessions are pushed into the table and scatter plots immediately.
 - `Clear` wipes session history and returns the firmware to `IDLE`.
+- The analysis panel lets you change `maxGens` live and export the current session history as date-stamped CSV or JSON files.
 
 ## API
 
@@ -200,6 +202,7 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 | `/restart` | `POST` | Reseed the current session immediately |
 | `/pause` | `POST` | Pause mid-session |
 | `/resume` | `POST` | Resume the paused session |
+| `/settings?maxGens=N` | `POST` | Update the per-session generation cap |
 | `/clear` | `POST` | Clear history and return to idle |
 
 ### `/data` shape
@@ -216,6 +219,7 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
   "session": 3,
   "batchTarget": 10,
   "totalSessions": 12,
+  "maxGens": 400,
   "state": "RUNNING"
 }
 ```
@@ -248,7 +252,7 @@ The dashboard polls `/data` every `150ms`. Action buttons also trigger an immedi
 - `frontend/src/components/ChartGrid/`
   - population, entropy, and probability charts
 - `frontend/src/components/AnalysisPanel/`
-  - collapsible density scatter, autocorrelation scatter, and session table
+  - collapsible settings/export controls, density scatter, autocorrelation scatter, and session table
 - `frontend/src/tokens.css`
   - global design tokens
 - `frontend/src/index.css`
@@ -262,6 +266,7 @@ Only `tokens.css` and `index.css` are global. Everything else is component-scope
 - The board uses double buffering with `grid[]` and `next[]`.
 - Edge wrapping is toroidal.
 - Stagnation detection compares the current hash against the last `6` hashes.
+- Sessions can end from stagnation, full extinction, or hitting `maxGens`.
 - Entropy uses binary Shannon entropy across all `256` cells.
 - The potentiometer maps to:
   - density: `15%` to `55%`
@@ -328,6 +333,7 @@ The hardware gives you the visual and audio experience of the simulation, but th
 - `P(birth)` and `P(death)` show the pressure of change generation to generation
 - density links initial conditions to session outcomes
 - autocorrelation hints at how much one generation predicts the next
+- the settings/export controls make it easy to tune run length and keep the raw session data
 
 That is the real motivation behind the project. It is not only an LED-matrix demo. It is a small physical lab for exploring how simple deterministic rules can produce order, collapse, oscillation, and a narrow edge-of-chaos regime that feels surprisingly alive.
 
@@ -351,9 +357,11 @@ Manual smoke test after flashing:
 
 - press `Start`, choose `5`, and confirm the header shows `1 / 5`
 - let one session finish and confirm the header advances to `2 / 5`
+- lower `maxGens` in Analysis, save it, and confirm later sessions stop at the new cap
 - press `Pause`, then `Resume`, and confirm the same grid continues
 - press `Restart` and confirm the grid reseeds immediately
 - press `Clear` and confirm the header returns to `0 / 0`
+- export CSV or JSON and confirm the saved file contains the session records
 
 Not verified in this environment:
 

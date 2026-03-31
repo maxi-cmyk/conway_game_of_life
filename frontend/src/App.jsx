@@ -40,6 +40,10 @@ export default function App() {
                 />
                 <AnalysisPanel
                     sessions={sim.sessions}
+                    maxGens={sim.maxGens}
+                    onExportCsv={sim.exportCSV}
+                    onExportJson={sim.exportJSON}
+                    onUpdateMaxGens={sim.updateMaxGens}
                 />
             </main>
         </div>

@@ -6,6 +6,9 @@ const config = {
     timePoints:       100,
     maxSessions:      30,
     sessionsPerBlock: 5,
+    defaultMaxGens:   400,
+    minMaxGens:       50,
+    maxMaxGens:       2000,
 };
 
 export default config;

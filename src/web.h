@@ -10,7 +10,7 @@ struct SessionSummary {
     uint8_t peakPop; //max population
     uint8_t avgEntropy; //mean entropy 
     uint16_t generations; //how gens this lasted
-    uint8_t endReason; //0 = stagnant, 1 = death 
+    uint8_t endReason; //0 = stagnant, 1 = death, 2 = max generations 
     uint8_t  avgPBirth;   // mean P(birth) × 100
     uint8_t  avgPDeath;   // mean P(death) × 100
     int8_t   autocorr;    // computed browser side, stored back via endpoint
@@ -39,6 +39,9 @@ void webUpdateState(const String& state, int session, int batchTarget, int total
 
 //main.cpp calls this when session ends
 void webAddSession(SessionSummary s);
+
+void webUpdateConfig(uint16_t maxGens);
+uint16_t webMaxGens();
 
 //user requests, main.cpp polls to check if pressed
 bool webStartRequested();

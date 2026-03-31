@@ -1,3 +1,4 @@
+import config from '../../config';
 import styles from './Header.module.css';
 
 export function Header({
@@ -20,6 +21,11 @@ export function Header({
     const sessionDisplay = batchTarget > 0
         ? `${session} / ${batchTarget}`
         : '0 / 0';
+
+    const shouldShowExportReminder = state === 'IDLE' && totalSessions > 0;
+    const exportReminder = totalSessions >= config.maxSessions
+        ? `History is full at ${config.maxSessions} sessions. Export your results before starting again.`
+        : `Batch finished. Export your results soon — the dashboard keeps up to ${config.maxSessions} sessions.`;
 
     return (
         <header className={styles.header}>
@@ -82,6 +88,11 @@ export function Header({
                 <Metric label="Session"    value={sessionDisplay}             color="var(--text-secondary)" />
                 <Metric label="Total"      value={totalSessions}              color="var(--text-secondary)" />
             </div>
+            {shouldShowExportReminder ? (
+                <p className={styles.reminder}>
+                    {exportReminder}
+                </p>
+            ) : null}
         </header>
     );
 }

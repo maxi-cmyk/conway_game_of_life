@@ -18,6 +18,9 @@ static constexpr const char* WIFI_SECRET = AP_PASSWORD;
 
 static constexpr int SERVER_PORT = 80;
 static constexpr int MAX_HISTORY = 30;
+static constexpr uint16_t DEFAULT_MAX_GENS = 400;
+static constexpr uint16_t MIN_MAX_GENS = 50;
+static constexpr uint16_t MAX_MAX_GENS = 2000;
 
 static WebServer server(SERVER_PORT);
 
@@ -29,6 +32,7 @@ static uint8_t  s_density       = 0;
 static int      s_session       = 0;
 static int      s_batchTarget   = 0;
 static int      s_totalSessions = 0;
+static uint16_t s_maxGens       = DEFAULT_MAX_GENS;
 static String   s_stateStr      = "IDLE";
 static float    s_pBirth        = 0.0f;
 static float    s_pDeath        = 0.0f;
@@ -67,6 +71,7 @@ static void handleData() {
     json += "\"session\":"       + String(s_session) + ",";
     json += "\"batchTarget\":"   + String(s_batchTarget) + ",";
     json += "\"totalSessions\":" + String(s_totalSessions) + ",";
+    json += "\"maxGens\":"       + String(s_maxGens) + ",";
     json += "\"state\":\""       + s_stateStr + "\"";
     json += "}";
 
@@ -120,6 +125,33 @@ static void handleRestart() {
     sendOk();
 }
 
+static void handleSettings() {
+    addCorsHeaders();
+
+    String json;
+    json.reserve(32);
+    json = "{";
+    json += "\"maxGens\":" + String(s_maxGens);
+    json += "}";
+
+    server.send(200, "application/json", json);
+}
+
+static void handleSettingsUpdate() {
+    int nextMaxGens = server.hasArg("maxGens") ? server.arg("maxGens").toInt() : (int)s_maxGens;
+
+    if (nextMaxGens < MIN_MAX_GENS) {
+        nextMaxGens = MIN_MAX_GENS;
+    }
+
+    if (nextMaxGens > MAX_MAX_GENS) {
+        nextMaxGens = MAX_MAX_GENS;
+    }
+
+    s_maxGens = (uint16_t)nextMaxGens;
+    sendOk();
+}
+
 void webSetup() {
     WiFi.mode(WIFI_STA);
     IPAddress local(192, 168, 50, 100);
@@ -142,6 +174,8 @@ void webSetup() {
 
     server.on("/data", HTTP_GET, handleData);
     server.on("/history", HTTP_GET, handleHistory);
+    server.on("/settings", HTTP_GET, handleSettings);
+    server.on("/settings", HTTP_POST, handleSettingsUpdate);
 
     server.on("/restart", HTTP_POST, handleRestart);
     server.on("/run", HTTP_POST, handleRun);
@@ -213,6 +247,14 @@ void webAddSession(SessionSummary s) {
     }
 
     s_history[s_historyCount++] = s;
+}
+
+void webUpdateConfig(uint16_t maxGens) {
+    s_maxGens = maxGens;
+}
+
+uint16_t webMaxGens() {
+    return s_maxGens;
 }
 
 void webStartAck() {

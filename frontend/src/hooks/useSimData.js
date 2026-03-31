@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import config from '../config';
+import { buildSessionCsv, buildSessionJson } from '../lib/sessions';
 
 export function useSimData() {
     // Live snapshot
     const [snap, setSnap] = useState({
         pop: 0, born: 0, died: 0, entropy: 0,
         pBirth: 0, pDeath: 0, density: 0,
-        session: 0, batchTarget: 0, totalSessions: 0, state: 'IDLE'
+        session: 0, batchTarget: 0, totalSessions: 0,
+        maxGens: config.defaultMaxGens, state: 'IDLE'
     });
 
     // Rolling time series (last N points)
@@ -203,6 +205,46 @@ export function useSimData() {
             .catch(() => {});
     }, [resetLiveHistory, syncAfterAction]);
 
+    const downloadExport = useCallback((filename, type, content) => {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    }, []);
+
+    const exportCSV = useCallback(() => {
+        if (sessions.length === 0) {
+            return;
+        }
+
+        const runId = new Date().toISOString().slice(0, 10);
+        const csv = buildSessionCsv(sessions, runId);
+        downloadExport(`game_of_life_${runId}.csv`, 'text/csv;charset=utf-8', csv);
+    }, [downloadExport, sessions]);
+
+    const exportJSON = useCallback(() => {
+        if (sessions.length === 0) {
+            return;
+        }
+
+        const runId = new Date().toISOString().slice(0, 10);
+        const json = buildSessionJson(sessions);
+        downloadExport(`game_of_life_${runId}.json`, 'application/json;charset=utf-8', json);
+    }, [downloadExport, sessions]);
+
+    const updateMaxGens = useCallback((nextMaxGens) => {
+        fetch(`${config.apiBase}/settings?maxGens=${nextMaxGens}`, { method: 'POST' })
+            .then(async () => {
+                setSnap(prev => ({ ...prev, maxGens: nextMaxGens }));
+                await fetchSnapshot({ appendRunningData: false });
+            })
+            .catch(() => {});
+    }, [fetchSnapshot]);
+
     return {
         ...snap,
         popHistory,
@@ -219,5 +261,8 @@ export function useSimData() {
         pause,
         resume,
         clearHistory,
+        exportCSV,
+        exportJSON,
+        updateMaxGens,
     };
 }

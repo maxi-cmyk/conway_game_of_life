@@ -13,6 +13,11 @@
 #define POT_PIN 34
 #define BUZZER_PIN 19
 #define BUZZER_CH 0
+#define END_STAGNANT  0
+#define END_DIED      1
+#define END_MAX_GENS  2
+#define DEFAULT_MAX_GENS 400
+#define SESSION_TRANSITION_MS 500
 
 enum SimState {
     IDLE,
@@ -30,6 +35,7 @@ int hashIndex = 0;
 unsigned long lastGen = 0;
 unsigned long toneEnd = 0;
 unsigned long lastStatusPush = 0;
+unsigned long nextSessionAt = 0;
 
 SimState simState = IDLE;
 
@@ -53,6 +59,7 @@ static int   pBirthHistLen = 0;
 static uint32_t densityAcc = 0;
 
 static void resetSessionTracking();
+static void handleSessionEnd(uint8_t reason);
 
 // Compute lag-1 autocorrelation of an array, returned scaled by 100 as int8_t
 static int8_t computeAutocorr(float* vals, int n) {
@@ -216,6 +223,10 @@ static void publishState() {
     );
 }
 
+static void scheduleNextSession() {
+    nextSessionAt = millis() + SESSION_TRANSITION_MS;
+}
+
 static void resetSessionTracking() {
     genCount      = 0;
     entropyAcc    = 0;
@@ -250,6 +261,7 @@ static void publishSeedSnapshot() {
 }
 
 static void beginFreshSession() {
+    nextSessionAt = 0;
     resetSessionTracking();
     seedGrid();
     render();
@@ -260,7 +272,7 @@ static void beginFreshSession() {
 }
 
 //step generation 
-void stepGeneration() {
+uint8_t stepGeneration() {
     memset(next, 0, sizeof(next));
 
     for (int r = 0; r < ROWS; r++) {
@@ -357,6 +369,8 @@ void stepGeneration() {
         historyCount,
         currentStateString()
     );
+
+    return pop;
 }
 
 void setup() {
@@ -368,6 +382,7 @@ void setup() {
     //basically taking random electromagnetic noise from environment (hand, power supply, RF interference)
     //will produce different number everytime (ADC noise sampling)
     ledcAttachPin(BUZZER_PIN, BUZZER_CH);
+    webUpdateConfig(DEFAULT_MAX_GENS);
     webSetup();                  // start WiFi AP + server
     seedGrid();
     mx.clear();
@@ -388,6 +403,7 @@ void loop() {
         if (simState == IDLE) {
             sessionCount = 0;
         }
+        nextSessionAt = 0;
         simState = RUNNING;
         beginFreshSession();
     }
@@ -415,6 +431,7 @@ void loop() {
         webClearAck();
         historyCount  = 0;
         sessionCount  = 0;
+        nextSessionAt = 0;
         resetSessionTracking();
         simState      = IDLE;     // wait for manual start
         mx.clear();               // blank the display
@@ -427,6 +444,13 @@ void loop() {
         toneEnd = 0;
     }
 
+    if (nextSessionAt > 0) {
+        if (simState == RUNNING && millis() >= nextSessionAt) {
+            beginFreshSession();
+        }
+        return;
+    }
+
     // Only run simulation if not paused
     if (simState != RUNNING) return;
 
@@ -434,35 +458,44 @@ void loop() {
     int genDelay = map(potVal, 0, 4095, 50, 300);
 
     if (millis() - lastGen >= genDelay) {
-        stepGeneration();
+        uint8_t pop = stepGeneration();
         render();
 
-        if (isStagnant()) {
-            ledcWriteTone(BUZZER_CH, 0);
-            finaliseSession(0);
-            sessionCount++;
-
-            if (webRunRemaining() > 0) {
-                // Run-N mode: decrement and auto-continue or stop
-                webDecrementRun();
-                if (webRunRemaining() > 0) {
-                    delay(500);
-                    beginFreshSession();
-                } else {
-                    simState = IDLE;     // batch complete, start fresh next time
-                    mx.clear();
-                    publishState();
-                }
-            } else if (sessionCount >= 5 || historyCount >= 30) {
-                simState = IDLE;
-                mx.clear();
-                publishState();
-            } else {
-                delay(500);
-                beginFreshSession();
-            }
+        if (pop == 0) {
+            handleSessionEnd(END_DIED);
+        } else if (genCount >= webMaxGens()) {
+            handleSessionEnd(END_MAX_GENS);
+        } else if (isStagnant()) {
+            handleSessionEnd(END_STAGNANT);
         }
 
         lastGen = millis();
+    }
+}
+
+static void handleSessionEnd(uint8_t reason) {
+    ledcWriteTone(BUZZER_CH, 0);
+    toneEnd = 0;
+    finaliseSession(reason);
+    sessionCount++;
+
+    if (webRunRemaining() > 0) {
+        // Run-N mode: decrement and auto-continue or stop
+        webDecrementRun();
+        if (webRunRemaining() > 0) {
+            scheduleNextSession();
+            publishState();
+        } else {
+            simState = IDLE;     // batch complete, start fresh next time
+            mx.clear();
+            publishState();
+        }
+    } else if (sessionCount >= 5 || historyCount >= 30) {
+        simState = IDLE;
+        mx.clear();
+        publishState();
+    } else {
+        scheduleNextSession();
+        publishState();
     }
 }

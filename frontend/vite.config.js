@@ -13,6 +13,7 @@ export default defineConfig({
             '/restart': { target, changeOrigin: true },
             '/run':     { target, changeOrigin: true },
             '/resume':  { target, changeOrigin: true },
+            '/settings': { target, changeOrigin: true },
             '/clear':   { target, changeOrigin: true },
         },
     },

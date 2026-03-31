@@ -1,4 +1,5 @@
 import styles from './SessionTable.module.css';
+import { getEndReasonLabel } from '../../lib/sessions';
 
 export function SessionTable({ sessions }) {
     if (!sessions || sessions.length === 0) {
@@ -30,7 +31,7 @@ export function SessionTable({ sessions }) {
                             <td>{s.avgPBirth != null ? (s.avgPBirth / 100).toFixed(2) : '—'}</td>
                             <td>{s.avgPDeath != null ? (s.avgPDeath / 100).toFixed(2) : '—'}</td>
                             <td>{s.generations ?? '—'}</td>
-                            <td>{s.endReason === 0 ? 'stagnant' : s.endReason === 1 ? 'died' : '—'}</td>
+                            <td>{getEndReasonLabel(s.endReason)}</td>
                         </tr>
                     ))}
                 </tbody>

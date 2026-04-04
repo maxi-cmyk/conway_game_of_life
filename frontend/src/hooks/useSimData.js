@@ -21,6 +21,20 @@ function sanitizeExportLabel(label) {
         .slice(0, 40);
 }
 
+function getExportIdWithDate(label) {
+    const safeLabel = sanitizeExportLabel(label);
+    let exportId = safeLabel || 'session_history';
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    const dateSuffix = `_${year}_${month}_${day}`;
+    if (!exportId.endsWith(dateSuffix)) {
+        exportId += dateSuffix;
+    }
+    return exportId;
+}
+
 export function useSimData() {
     // Live snapshot
     const [snap, setSnap] = useState({
@@ -371,8 +385,7 @@ export function useSimData() {
             return;
         }
 
-        const safeLabel = sanitizeExportLabel(label);
-        const exportId = safeLabel || 'session_history';
+        const exportId = getExportIdWithDate(label);
         const csv = buildSessionCsv(sessions, exportId);
         downloadExport(`${exportId}.csv`, 'text/csv;charset=utf-8', csv);
     }, [downloadExport, sessions]);
@@ -382,8 +395,7 @@ export function useSimData() {
             return;
         }
 
-        const safeLabel = sanitizeExportLabel(label);
-        const exportId = safeLabel || 'session_history';
+        const exportId = getExportIdWithDate(label);
         const json = buildSessionJson(sessions);
         downloadExport(`${exportId}.json`, 'application/json;charset=utf-8', json);
     }, [downloadExport, sessions]);

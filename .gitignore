@@ -18,3 +18,4 @@ analysis/data/*.csv
 analysis/data/*.json
 analysis/.venv/
 analysis/anaconda_projects/
+analysis/*.py

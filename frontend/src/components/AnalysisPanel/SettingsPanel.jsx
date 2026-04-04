@@ -209,7 +209,9 @@ export function SettingsPanel({
                                     value={draft.maxGens}
                                     onChange={(event) => handleDraftChange('maxGens', event.target.value)}
                                 />
-                                <span className={styles.hint}>Applies to the next freshly seeded session only.</span>
+                                <span className={styles.hint}>
+                                    Standard: 2000. For boundary tests (35%+), use 3000 and prefix name with "limit3k_".
+                                </span>
                             </label>
 
                             <label className={styles.field}>
@@ -256,7 +258,7 @@ export function SettingsPanel({
                             value={draft.exportLabel}
                             onChange={(event) => handleDraftChange('exportLabel', event.target.value)}
                         />
-                        <span className={styles.hint}>Include the date: <code>runX_YYYY_MM_DD</code>, for example <code>run1_2026_04_01</code>. Spaces and punctuation are cleaned automatically.</span>
+                        <span className={styles.hint}>Format: runX (standard) or limit3k_runX (experimental). X is the run number.</span>
                     </label>
                     {shouldShowExportReminder ? (
                         <p className={styles.reminder}>{exportReminder}</p>
